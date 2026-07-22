@@ -8,3 +8,4 @@ export const CAPTURE_PACKAGE = '@novarec/capture' as const;
 export * from './geometry.js';
 export * from './sustain.js';
 export * from './sources.js';
+export * from './sync.js';
