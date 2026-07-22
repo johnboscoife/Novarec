@@ -9,3 +9,5 @@ export * from './manifest.js';
 export * from './disk.js';
 export * from './segment-writer.js';
 export * from './recovery.js';
+export * from './ffmpeg-command.js';
+export * from './export-queue.js';
