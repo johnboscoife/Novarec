@@ -1,11 +1,10 @@
-import type { Track } from '@novarec/shared';
-
 /**
- * @novarec/timeline — the editing model: ripple ops, speed ramps, volume
- * envelopes, and transcript sync. Phase 6 implements it.
+ * @novarec/timeline — the editing model. Immutable clip operations (split,
+ * trim, ripple-delete, remove-range) plus the transcript-based-editing and
+ * silence-removal logic that build on them. All pure and unit-tested.
  */
 export const TIMELINE_PACKAGE = '@novarec/timeline' as const;
 
-export function trackKinds(tracks: readonly Track[]): string[] {
-  return tracks.map((t) => t.kind);
-}
+export * from './timeline.js';
+export * from './transcript-edit.js';
+export * from './silence.js';
