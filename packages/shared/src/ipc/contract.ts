@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import {
+  CaptureSettingsSchema,
+  DisplayInfoSchema,
+  SavedRegionSchema,
+  SourceListSchema,
+} from '../model/capture.js';
 
 /**
  * The single source of truth for every IPC message crossing the preload bridge.
@@ -40,6 +46,30 @@ export const ipcContract = {
   'app:ping': {
     request: PingRequestSchema,
     response: PingResponseSchema,
+  },
+
+  // --- Capture (Phase 1) ---
+  'capture:getDisplays': {
+    request: z.void(),
+    response: z.array(DisplayInfoSchema),
+  },
+  'capture:listSources': {
+    request: z.void(),
+    response: SourceListSchema,
+  },
+  'capture:getSettings': {
+    request: z.void(),
+    response: CaptureSettingsSchema,
+  },
+  'capture:saveSettings': {
+    request: CaptureSettingsSchema,
+    response: CaptureSettingsSchema,
+  },
+  // Opens the region-selection overlay; resolves with the chosen region or
+  // null if the user cancelled.
+  'capture:beginRegionSelect': {
+    request: z.void(),
+    response: SavedRegionSchema.nullable(),
   },
 } as const;
 
