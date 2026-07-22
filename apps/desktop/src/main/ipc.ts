@@ -95,14 +95,14 @@ export function registerIpcHandlers(): void {
     return region === null ? null : SavedRegionSchema.parse(region);
   });
 
-  // --- Recording (Phase 2) ---
-  handleChannel('recording:start', (req) => startRecording(req.trackKind));
+  // --- Recording (Phase 2/3) ---
+  handleChannel('recording:start', (req) => startRecording(req.tracks));
   handleChannel('recording:writeInit', async (req) => {
-    await writeInit(req.recordingId, req.bytes);
+    await writeInit(req.recordingId, req.trackId, req.bytes);
     return { ok: true as const };
   });
   handleChannel('recording:writeFragment', async (req) => ({
-    segmentCount: await writeFragment(req.recordingId, req.bytes, req.durationMs),
+    segmentCount: await writeFragment(req.recordingId, req.trackId, req.bytes, req.durationMs),
   }));
   handleChannel('recording:pause', async (req) => {
     await pauseRecording(req.recordingId, req.atMs);

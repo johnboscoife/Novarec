@@ -1,22 +1,24 @@
+import type { TrackConfig } from '@novarec/shared';
+
 /**
- * Drives a single screen/window recording from the renderer.
- *
- * MediaRecorder emits fragmented-MP4 chunks (the first carries the init/moov,
- * the rest are moof+mdat fragments that concatenate into a valid file). Each
- * chunk is streamed to the main process, which persists it through the durable,
- * unit-tested SegmentWriter. Encoding runs in Chromium's media pipeline, off the
- * UI thread; the only main-thread work here is handing bytes to IPC. See
- * ADR-0005 for why this uses MediaRecorder rather than WebCodecs+mp4box.
+ * Multi-track recording from the renderer. Each enabled track (screen, camera,
+ * mic, system audio) gets its own MediaStream and MediaRecorder and streams
+ * fragmented-MP4 chunks to main, which persists each as an independent, durable
+ * track (they stay separate until export). Encoding runs in Chromium's media
+ * pipeline, off the UI thread. See ADR-0005 (MediaRecorder) and ADR-0006
+ * (per-track writers).
  */
-const MIME_CANDIDATES = [
+const VIDEO_MIME = [
   'video/mp4;codecs=avc1.42E01F',
   'video/mp4',
   'video/webm;codecs=vp9',
   'video/webm',
 ];
+const AUDIO_MIME = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'];
+const TIMESLICE_MS = 1000;
 
-function pickMimeType(): string | null {
-  for (const mime of MIME_CANDIDATES) {
+function pickMime(candidates: string[]): string | null {
+  for (const mime of candidates) {
     if (MediaRecorder.isTypeSupported(mime)) return mime;
   }
   return null;
@@ -25,78 +27,151 @@ function pickMimeType(): string | null {
 interface DesktopVideoConstraints {
   mandatory: {
     chromeMediaSource: 'desktop';
-    chromeMediaSourceId: string;
-    maxFrameRate?: number;
+    chromeMediaSourceId?: string | undefined;
+    maxFrameRate?: number | undefined;
   };
+}
+interface DesktopAudioConstraints {
+  mandatory: { chromeMediaSource: 'desktop' };
+}
+
+async function acquireStream(config: TrackConfig, targetFps: number): Promise<MediaStream> {
+  const media = navigator.mediaDevices;
+  switch (config.kind) {
+    case 'screen': {
+      const video: DesktopVideoConstraints = {
+        mandatory: {
+          chromeMediaSource: 'desktop',
+          chromeMediaSourceId: config.sourceId,
+          maxFrameRate: targetFps,
+        },
+      };
+      return media.getUserMedia({ audio: false, video: video as unknown as MediaTrackConstraints });
+    }
+    case 'camera':
+      return media.getUserMedia({
+        video: config.deviceId ? { deviceId: { exact: config.deviceId } } : true,
+      });
+    case 'microphone':
+      return media.getUserMedia({
+        audio: config.deviceId ? { deviceId: { exact: config.deviceId } } : true,
+      });
+    case 'systemAudio': {
+      // Windows loopback capture; documented fallback if unsupported.
+      const audio: DesktopAudioConstraints = { mandatory: { chromeMediaSource: 'desktop' } };
+      return media.getUserMedia({ video: false, audio: audio as unknown as MediaTrackConstraints });
+    }
+    default:
+      throw new Error(`Unsupported track kind: ${String(config.kind)}`);
+  }
 }
 
 export interface RecorderCallbacks {
-  onSegmentCount(count: number): void;
+  onSegmentCount(total: number): void;
   onError(message: string): void;
 }
 
-const TIMESLICE_MS = 1000;
-
-export class StreamRecorder {
-  private stream: MediaStream | null = null;
+class TrackRecorder {
   private recorder: MediaRecorder | null = null;
-  private recordingId: string | null = null;
   private lastChunkAt = 0;
-  private writeQueue: Promise<void> = Promise.resolve();
+  private queue: Promise<void> = Promise.resolve();
 
-  constructor(private readonly callbacks: RecorderCallbacks) {}
+  constructor(
+    private readonly recordingId: string,
+    private readonly trackId: string,
+    private readonly stream: MediaStream,
+    private readonly isVideo: boolean,
+    private readonly onError: (message: string) => void,
+    private readonly onSegment: (count: number) => void,
+  ) {}
 
-  async start(sourceId: string, targetFps: number): Promise<void> {
-    const constraints: DesktopVideoConstraints = {
-      mandatory: {
-        chromeMediaSource: 'desktop',
-        chromeMediaSourceId: sourceId,
-        maxFrameRate: targetFps,
-      },
-    };
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: constraints as unknown as MediaTrackConstraints,
-    });
-
-    const { recordingId } = await window.novarec.startRecording({ trackKind: 'video' });
-    this.recordingId = recordingId;
-
-    const mimeType = pickMimeType();
-    this.recorder = new MediaRecorder(this.stream, mimeType ? { mimeType } : undefined);
-    this.recorder.ondataavailable = (event) => this.enqueueChunk(event.data);
-    this.recorder.onerror = () => this.callbacks.onError('The recorder reported an error');
+  start(): void {
+    const mime = pickMime(this.isVideo ? VIDEO_MIME : AUDIO_MIME);
+    this.recorder = new MediaRecorder(this.stream, mime ? { mimeType: mime } : undefined);
+    this.recorder.ondataavailable = (event) => this.enqueue(event.data);
+    this.recorder.onerror = () => this.onError(`Track ${this.trackId} reported an error`);
     this.lastChunkAt = performance.now();
     this.recorder.start(TIMESLICE_MS);
   }
 
-  private enqueueChunk(blob: Blob): void {
-    const recordingId = this.recordingId;
-    if (!recordingId || blob.size === 0) return;
+  private enqueue(blob: Blob): void {
+    if (blob.size === 0) return;
     const now = performance.now();
     const durationMs = Math.max(0, now - this.lastChunkAt);
     this.lastChunkAt = now;
-
-    // Serialize writes so fragments reach main in capture order.
-    this.writeQueue = this.writeQueue.then(async () => {
+    this.queue = this.queue.then(async () => {
       try {
         const bytes = new Uint8Array(await blob.arrayBuffer());
         const { segmentCount } = await window.novarec.writeFragment({
-          recordingId,
+          recordingId: this.recordingId,
+          trackId: this.trackId,
           bytes,
           durationMs,
         });
-        this.callbacks.onSegmentCount(segmentCount);
+        this.onSegment(segmentCount);
       } catch (error) {
-        this.callbacks.onError(
-          error instanceof Error ? error.message : 'Failed to write a segment',
-        );
+        this.onError(error instanceof Error ? error.message : 'Failed to write a segment');
       }
     });
   }
 
-  async pause(): Promise<void> {
+  pause(): void {
     this.recorder?.pause();
+  }
+
+  resume(): void {
+    this.lastChunkAt = performance.now();
+    this.recorder?.resume();
+  }
+
+  async stop(): Promise<void> {
+    const recorder = this.recorder;
+    if (recorder) {
+      await new Promise<void>((resolve) => {
+        recorder.onstop = () => resolve();
+        recorder.stop();
+      });
+      await this.queue;
+    }
+    this.stream.getTracks().forEach((t) => t.stop());
+  }
+}
+
+export class MultiTrackRecorder {
+  private recordingId: string | null = null;
+  private tracks: TrackRecorder[] = [];
+  private perTrack = new Map<string, number>();
+
+  constructor(private readonly callbacks: RecorderCallbacks) {}
+
+  async start(configs: TrackConfig[], targetFps: number): Promise<void> {
+    const enabled = configs.filter((c) => c.enabled);
+    if (enabled.length === 0) throw new Error('Enable at least one track to record');
+
+    const { recordingId } = await window.novarec.startRecording({ tracks: enabled });
+    this.recordingId = recordingId;
+
+    for (const config of enabled) {
+      const stream = await acquireStream(config, targetFps);
+      const isVideo = config.kind === 'screen' || config.kind === 'camera';
+      const recorder = new TrackRecorder(
+        recordingId,
+        config.id,
+        stream,
+        isVideo,
+        this.callbacks.onError,
+        (count) => {
+          this.perTrack.set(config.id, count);
+          this.callbacks.onSegmentCount([...this.perTrack.values()].reduce((a, b) => a + b, 0));
+        },
+      );
+      recorder.start();
+      this.tracks.push(recorder);
+    }
+  }
+
+  async pause(): Promise<void> {
+    this.tracks.forEach((t) => t.pause());
     if (this.recordingId) {
       await window.novarec.pauseRecording({
         recordingId: this.recordingId,
@@ -112,29 +187,19 @@ export class StreamRecorder {
         atMs: performance.now(),
       });
     }
-    this.lastChunkAt = performance.now();
-    this.recorder?.resume();
+    this.tracks.forEach((t) => t.resume());
   }
 
-  async stop(): Promise<string | null> {
-    const recorder = this.recorder;
-    const recordingId = this.recordingId;
-    if (!recorder || !recordingId) return null;
-
-    await new Promise<void>((resolve) => {
-      recorder.onstop = () => resolve();
-      recorder.stop();
-    });
-    await this.writeQueue; // flush all pending fragment writes
-    const summary = await window.novarec.stopRecording({ recordingId, atMs: performance.now() });
-    this.cleanup();
-    return summary.recordingId;
-  }
-
-  private cleanup(): void {
-    this.stream?.getTracks().forEach((track) => track.stop());
-    this.stream = null;
-    this.recorder = null;
+  async stop(): Promise<void> {
+    await Promise.all(this.tracks.map((t) => t.stop()));
+    if (this.recordingId) {
+      await window.novarec.stopRecording({
+        recordingId: this.recordingId,
+        atMs: performance.now(),
+      });
+    }
+    this.tracks = [];
     this.recordingId = null;
+    this.perTrack.clear();
   }
 }

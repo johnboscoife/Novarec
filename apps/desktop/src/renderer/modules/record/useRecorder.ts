@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { StreamRecorder } from './recorder.js';
+import type { TrackConfig } from '@novarec/shared';
+import { MultiTrackRecorder } from './recorder.js';
 
 export type RecordingState = 'idle' | 'recording' | 'paused';
 
@@ -8,14 +9,14 @@ export interface RecorderControls {
   elapsedMs: number;
   segmentCount: number;
   error: string | null;
-  start(sourceId: string, targetFps: number): Promise<void>;
+  start(configs: TrackConfig[], targetFps: number): Promise<void>;
   pause(): Promise<void>;
   resume(): Promise<void>;
   stop(): Promise<void>;
 }
 
 export function useRecorder(): RecorderControls {
-  const recorderRef = useRef<StreamRecorder | null>(null);
+  const recorderRef = useRef<MultiTrackRecorder | null>(null);
   const [state, setState] = useState<RecordingState>('idle');
   const [segmentCount, setSegmentCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -33,18 +34,18 @@ export function useRecorder(): RecorderControls {
     return () => window.clearInterval(id);
   }, [state]);
 
-  const start = useCallback(async (sourceId: string, targetFps: number) => {
+  const start = useCallback(async (configs: TrackConfig[], targetFps: number) => {
     setError(null);
     setSegmentCount(0);
     setElapsedMs(0);
-    const recorder = new StreamRecorder({
+    const recorder = new MultiTrackRecorder({
       onSegmentCount: (n) => setSegmentCount(n),
       onError: (message) => setError(message),
     });
     recorderRef.current = recorder;
     startedAt.current = performance.now();
     pausedAccumMs.current = 0;
-    await recorder.start(sourceId, targetFps);
+    await recorder.start(configs, targetFps);
     setState('recording');
   }, []);
 

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { join, resolve } from 'node:path';
+import { readdir, stat } from 'node:fs/promises';
+import { basename, join, resolve } from 'node:path';
 import { app } from 'electron';
 import {
   DiskFullError,
@@ -9,17 +10,27 @@ import {
   sealedSegments,
   totalDurationMs,
 } from '@novarec/encoder';
-import type { OrphanedRecording, RecordingSummary, RecoveryResult } from '@novarec/shared';
+import {
+  trackMediaKind,
+  type OrphanedRecording,
+  type RecordingStatus,
+  type RecordingSummary,
+  type RecoveryResult,
+  type TrackConfig,
+} from '@novarec/shared';
 
 /**
- * Bridges the renderer's encoder stream to the durable, unit-tested
- * SegmentWriter. The renderer sends the init segment then fragments; main
- * persists them. On disk-full it finalizes gracefully so sealed segments are
- * never lost.
+ * Multi-track recording. Each enabled track is an independent, durable
+ * SegmentWriter in its own subdirectory (`<vault>/<recordingId>/<trackId>/`),
+ * sharing one createdAt session clock. Tracks stay separate until export.
  */
-interface Session {
+interface TrackWriter {
   writer: SegmentWriter;
   started: boolean;
+}
+interface Session {
+  dir: string;
+  tracks: Map<string, TrackWriter>;
 }
 
 const sessions = new Map<string, Session>();
@@ -28,60 +39,107 @@ function vault(): string {
   return join(app.getPath('userData'), 'recordings');
 }
 
+async function subdirectories(dir: string): Promise<string[]> {
+  try {
+    const entries = await readdir(dir, { withFileTypes: true });
+    return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+  } catch {
+    return [];
+  }
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function getSession(recordingId: string): Session {
   const session = sessions.get(recordingId);
   if (!session) throw new Error(`Unknown recording: ${recordingId}`);
   return session;
 }
 
-async function ensureStarted(session: Session, initBytes?: Uint8Array): Promise<void> {
-  if (!session.started) {
-    await session.writer.start(initBytes);
-    session.started = true;
+function getTrack(recordingId: string, trackId: string): TrackWriter {
+  const track = getSession(recordingId).tracks.get(trackId);
+  if (!track) throw new Error(`Unknown track ${trackId} on recording ${recordingId}`);
+  return track;
+}
+
+async function ensureStarted(track: TrackWriter, initBytes?: Uint8Array): Promise<void> {
+  if (!track.started) {
+    await track.writer.start(initBytes);
+    track.started = true;
   }
 }
 
 export async function startRecording(
-  trackKind: 'video' | 'audio',
-): Promise<{ recordingId: string; dir: string }> {
+  configs: TrackConfig[],
+): Promise<{ recordingId: string; dir: string; tracks: { trackId: string; dir: string }[] }> {
   const recordingId = randomUUID();
   const dir = join(vault(), recordingId);
-  const writer = new SegmentWriter({
-    dir,
-    recordingId,
-    createdAt: new Date().toISOString(),
-    trackKind,
-  });
-  sessions.set(recordingId, { writer, started: false });
-  return { recordingId, dir };
+  const createdAt = new Date().toISOString();
+  const tracks = new Map<string, TrackWriter>();
+  const trackDirs: { trackId: string; dir: string }[] = [];
+
+  for (const config of configs.filter((c) => c.enabled)) {
+    const trackDir = join(dir, config.id);
+    const writer = new SegmentWriter({
+      dir: trackDir,
+      recordingId: `${recordingId}:${config.id}`,
+      createdAt,
+      trackKind: trackMediaKind(config.kind),
+    });
+    tracks.set(config.id, { writer, started: false });
+    trackDirs.push({ trackId: config.id, dir: trackDir });
+  }
+
+  sessions.set(recordingId, { dir, tracks });
+  return { recordingId, dir, tracks: trackDirs };
 }
 
-export async function writeInit(recordingId: string, bytes: Uint8Array): Promise<void> {
-  await ensureStarted(getSession(recordingId), bytes);
+export async function writeInit(
+  recordingId: string,
+  trackId: string,
+  bytes: Uint8Array,
+): Promise<void> {
+  await ensureStarted(getTrack(recordingId, trackId), bytes);
 }
 
 export async function writeFragment(
   recordingId: string,
+  trackId: string,
   bytes: Uint8Array,
   durationMs: number,
 ): Promise<number> {
-  const session = getSession(recordingId);
-  await ensureStarted(session);
+  const track = getTrack(recordingId, trackId);
+  await ensureStarted(track);
   try {
-    await session.writer.writeFragment(bytes, durationMs);
+    await track.writer.writeFragment(bytes, durationMs);
   } catch (error) {
     if (error instanceof DiskFullError) await finalize(recordingId, 0);
     throw error;
   }
-  return sealedSegments(session.writer.state).length;
+  return sealedSegments(track.writer.state).length;
 }
 
 export async function pauseRecording(recordingId: string, atMs: number): Promise<void> {
-  await getSession(recordingId).writer.pause(atMs);
+  await Promise.all(
+    [...getSession(recordingId).tracks.values()].map((t) =>
+      t.started ? t.writer.pause(atMs) : Promise.resolve(),
+    ),
+  );
 }
 
 export async function resumeRecording(recordingId: string, atMs: number): Promise<void> {
-  await getSession(recordingId).writer.resume(atMs);
+  await Promise.all(
+    [...getSession(recordingId).tracks.values()].map((t) =>
+      t.started ? t.writer.resume(atMs) : Promise.resolve(),
+    ),
+  );
 }
 
 export async function stopRecording(recordingId: string, atMs: number): Promise<RecordingSummary> {
@@ -90,26 +148,54 @@ export async function stopRecording(recordingId: string, atMs: number): Promise<
 
 async function finalize(recordingId: string, atMs: number): Promise<RecordingSummary> {
   const session = getSession(recordingId);
-  const state = await session.writer.stop(atMs, 'ready');
-  sessions.delete(recordingId);
-  return {
-    recordingId,
-    dir: join(vault(), recordingId),
-    status: state.status,
-    segmentCount: sealedSegments(state).length,
-    durationMs: totalDurationMs(state),
-  };
-}
-
-export function listOrphans(): Promise<OrphanedRecording[]> {
-  return scanForOrphans(vault());
-}
-
-export function recover(dir: string): Promise<RecoveryResult> {
-  // Security: only recover recordings inside our own vault.
-  const root = resolve(vault());
-  if (!resolve(dir).startsWith(root)) {
-    return Promise.reject(new Error('Refusing to recover a path outside the recordings vault'));
+  let segmentCount = 0;
+  let durationMs = 0;
+  for (const track of session.tracks.values()) {
+    if (!track.started) continue;
+    const state = await track.writer.stop(atMs, 'ready');
+    segmentCount += sealedSegments(state).length;
+    durationMs = Math.max(durationMs, totalDurationMs(state));
   }
-  return recoverRecording(dir);
+  sessions.delete(recordingId);
+  return { recordingId, dir: session.dir, status: 'ready', segmentCount, durationMs };
+}
+
+/** Group per-track orphans by recording (a recording is orphaned if any track is). */
+export async function listOrphans(): Promise<OrphanedRecording[]> {
+  const root = vault();
+  const result: OrphanedRecording[] = [];
+  for (const recordingId of await subdirectories(root)) {
+    const recDir = join(root, recordingId);
+    const trackOrphans = await scanForOrphans(recDir);
+    if (trackOrphans.length === 0) continue;
+    const status: RecordingStatus = trackOrphans[0]?.status ?? 'recording';
+    result.push({
+      dir: recDir,
+      recordingId,
+      createdAt: trackOrphans[0]?.createdAt ?? '',
+      status,
+      sealedSegmentCount: trackOrphans.reduce((n, t) => n + t.sealedSegmentCount, 0),
+      durationMs: trackOrphans.reduce((m, t) => Math.max(m, t.durationMs), 0),
+    });
+  }
+  return result;
+}
+
+export async function recover(dir: string): Promise<RecoveryResult> {
+  // Security: only recover inside our own vault.
+  if (!resolve(dir).startsWith(resolve(vault()))) {
+    throw new Error('Refusing to recover a path outside the recordings vault');
+  }
+  let segmentCount = 0;
+  let durationMs = 0;
+  let outputPath = '';
+  for (const trackId of await subdirectories(dir)) {
+    const trackDir = join(dir, trackId);
+    if (!(await fileExists(join(trackDir, 'manifest.jsonl')))) continue;
+    const recovered = await recoverRecording(trackDir);
+    segmentCount += recovered.segmentCount;
+    durationMs = Math.max(durationMs, recovered.durationMs);
+    if (!outputPath) outputPath = recovered.outputPath;
+  }
+  return { recordingId: basename(dir), outputPath, segmentCount, durationMs };
 }

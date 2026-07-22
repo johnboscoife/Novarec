@@ -1,6 +1,12 @@
 import { useEffect, useState, type ReactElement, type ReactNode } from 'react';
 import { sustainVerdict, type SustainVerdict } from '@novarec/capture';
-import { SUPPORTED_TARGET_FPS, type SavedRegion, type TargetFps } from '@novarec/shared';
+import {
+  SUPPORTED_TARGET_FPS,
+  type CaptureSource,
+  type SavedRegion,
+  type TargetFps,
+  type TrackConfig,
+} from '@novarec/shared';
 import { useAppInfo } from '../shell/useAppInfo.js';
 import {
   useCaptureSettings,
@@ -33,6 +39,13 @@ export function RecordView(): ReactElement {
   const [probing, setProbing] = useState(false);
   const [probe, setProbe] = useState<ProbeResult | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
+
+  // Additional tracks captured alongside the screen (kept separate until export).
+  const [cameraOn, setCameraOn] = useState(false);
+  const [micOn, setMicOn] = useState(false);
+  const [systemAudioOn, setSystemAudioOn] = useState(false);
+  const [cameraDeviceId, setCameraDeviceId] = useState<string | null>(null);
+  const [micDeviceId, setMicDeviceId] = useState<string | null>(null);
 
   // Seed local state from persisted settings once loaded.
   useEffect(() => {
@@ -86,6 +99,58 @@ export function RecordView(): ReactElement {
   const info = useAppInfo();
   const screens = sources.data?.screens ?? [];
   const windows = sources.data?.windows ?? [];
+  const videoDevices = (devices.data ?? []).filter((d) => d.kind === 'camera');
+  const audioDevices = (devices.data ?? []).filter((d) => d.kind === 'microphone');
+
+  function buildTrackConfigs(): TrackConfig[] {
+    const configs: TrackConfig[] = [];
+    if (selectedSourceId) {
+      configs.push({
+        id: 'screen',
+        kind: 'screen',
+        label: 'Screen',
+        sourceId: selectedSourceId,
+        enabled: true,
+        gain: 1,
+        monitor: false,
+      });
+    }
+    if (cameraOn) {
+      configs.push({
+        id: 'camera',
+        kind: 'camera',
+        label: 'Camera',
+        enabled: true,
+        gain: 1,
+        monitor: false,
+        ...(cameraDeviceId ? { deviceId: cameraDeviceId } : {}),
+      });
+    }
+    if (micOn) {
+      configs.push({
+        id: 'microphone',
+        kind: 'microphone',
+        label: 'Microphone',
+        enabled: true,
+        gain: 1,
+        monitor: false,
+        ...(micDeviceId ? { deviceId: micDeviceId } : {}),
+      });
+    }
+    if (systemAudioOn) {
+      configs.push({
+        id: 'systemAudio',
+        kind: 'systemAudio',
+        label: 'System audio',
+        enabled: true,
+        gain: 1,
+        monitor: false,
+      });
+    }
+    return configs;
+  }
+
+  const canRecord = selectedSourceId !== null || cameraOn || micOn || systemAudioOn;
 
   return (
     <section className="flex h-full flex-col p-8">
@@ -99,10 +164,8 @@ export function RecordView(): ReactElement {
       <div className="mb-6">
         <RecordingControls
           recorder={recorder}
-          canStart={selectedSourceId !== null && recorder.state === 'idle'}
-          onStart={() => {
-            if (selectedSourceId) void recorder.start(selectedSourceId, targetFps);
-          }}
+          canStart={canRecord && recorder.state === 'idle'}
+          onStart={() => void recorder.start(buildTrackConfigs(), targetFps)}
         />
       </div>
 
@@ -210,6 +273,40 @@ export function RecordView(): ReactElement {
                 Select a region…
               </button>
             )}
+          </Panel>
+
+          <Panel title="Tracks">
+            <div className="space-y-2">
+              <TrackToggle
+                label="Camera"
+                checked={cameraOn}
+                onToggle={setCameraOn}
+                devices={videoDevices}
+                deviceId={cameraDeviceId}
+                onDevice={setCameraDeviceId}
+              />
+              <TrackToggle
+                label="Microphone"
+                checked={micOn}
+                onToggle={setMicOn}
+                devices={audioDevices}
+                deviceId={micDeviceId}
+                onDevice={setMicDeviceId}
+              />
+              <label className="flex items-center gap-2 text-sm text-neutral-300">
+                <input
+                  type="checkbox"
+                  checked={systemAudioOn}
+                  onChange={(e) => setSystemAudioOn(e.target.checked)}
+                  className="accent-blue-500"
+                />
+                System audio <span className="text-xs text-neutral-500">(Windows)</span>
+              </label>
+            </div>
+            <p className="mt-2 text-xs text-neutral-500">
+              Screen comes from the selected source. Each track is saved separately and stays in
+              sync.
+            </p>
           </Panel>
 
           <Panel title="Capacity check">
@@ -330,6 +427,50 @@ function Metric({ label, children }: { label: string; children: ReactNode }): Re
     <div className="flex items-center justify-between">
       <span className="text-neutral-500">{label}</span>
       <span className="text-neutral-200">{children}</span>
+    </div>
+  );
+}
+
+function TrackToggle({
+  label,
+  checked,
+  onToggle,
+  devices,
+  deviceId,
+  onDevice,
+}: {
+  label: string;
+  checked: boolean;
+  onToggle: (value: boolean) => void;
+  devices: CaptureSource[];
+  deviceId: string | null;
+  onDevice: (id: string) => void;
+}): ReactElement {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <label className="flex items-center gap-2 text-sm text-neutral-300">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onToggle(e.target.checked)}
+          className="accent-blue-500"
+        />
+        {label}
+      </label>
+      {checked && devices.length > 0 && (
+        <select
+          value={deviceId ?? ''}
+          onChange={(e) => onDevice(e.target.value)}
+          className="max-w-[55%] truncate rounded-md bg-neutral-800 px-2 py-1 text-xs text-neutral-200"
+        >
+          <option value="">Default</option>
+          {devices.map((d) => (
+            <option key={d.id} value={d.deviceId ?? d.id}>
+              {d.label}
+            </option>
+          ))}
+        </select>
+      )}
     </div>
   );
 }
