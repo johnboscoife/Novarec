@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@novarec/capture": "workspace:*",
+    "@novarec/encoder": "workspace:*",
     "@novarec/shared": "workspace:*",
     "@novarec/ui": "workspace:*",
     "@tanstack/react-query": "^5.101.4",

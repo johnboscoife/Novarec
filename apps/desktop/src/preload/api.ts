@@ -24,4 +24,22 @@ export interface NovaRecApi {
   getCaptureSettings(): Promise<CaptureSettings>;
   saveCaptureSettings(settings: CaptureSettings): Promise<CaptureSettings>;
   beginRegionSelect(): Promise<SavedRegion | null>;
+
+  // --- Recording (Phase 2) ---
+  startRecording(payload: IpcRequest<'recording:start'>): Promise<IpcResponse<'recording:start'>>;
+  writeInit(
+    payload: IpcRequest<'recording:writeInit'>,
+  ): Promise<IpcResponse<'recording:writeInit'>>;
+  writeFragment(
+    payload: IpcRequest<'recording:writeFragment'>,
+  ): Promise<IpcResponse<'recording:writeFragment'>>;
+  pauseRecording(payload: IpcRequest<'recording:pause'>): Promise<IpcResponse<'recording:pause'>>;
+  resumeRecording(
+    payload: IpcRequest<'recording:resume'>,
+  ): Promise<IpcResponse<'recording:resume'>>;
+  stopRecording(payload: IpcRequest<'recording:stop'>): Promise<IpcResponse<'recording:stop'>>;
+  listOrphans(): Promise<IpcResponse<'recording:listOrphans'>>;
+  recoverRecording(
+    payload: IpcRequest<'recording:recover'>,
+  ): Promise<IpcResponse<'recording:recover'>>;
 }

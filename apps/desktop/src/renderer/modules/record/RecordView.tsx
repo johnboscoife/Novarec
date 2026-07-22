@@ -10,6 +10,9 @@ import {
   useSources,
 } from './useCaptureData.js';
 import { runSustainProbe, type ProbeResult } from './probe.js';
+import { useRecorder } from './useRecorder.js';
+import { RecordingControls } from './RecordingControls.js';
+import { RecoveryBanner } from './RecoveryBanner.js';
 
 const VERDICT_STYLE: Record<SustainVerdict, { label: string; className: string }> = {
   sustained: { label: 'Sustained', className: 'text-emerald-400' },
@@ -79,6 +82,7 @@ export function RecordView(): ReactElement {
     }
   }
 
+  const recorder = useRecorder();
   const info = useAppInfo();
   const screens = sources.data?.screens ?? [];
   const windows = sources.data?.windows ?? [];
@@ -89,6 +93,18 @@ export function RecordView(): ReactElement {
         <p className="text-xs font-medium uppercase tracking-widest text-neutral-500">Record</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Set up your capture</h1>
       </header>
+
+      <RecoveryBanner />
+
+      <div className="mb-6">
+        <RecordingControls
+          recorder={recorder}
+          canStart={selectedSourceId !== null && recorder.state === 'idle'}
+          onStart={() => {
+            if (selectedSourceId) void recorder.start(selectedSourceId, targetFps);
+          }}
+        />
+      </div>
 
       <div className="grid flex-1 grid-cols-[1.3fr_1fr] gap-6 overflow-hidden">
         {/* Sources */}

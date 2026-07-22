@@ -9,12 +9,38 @@ import {
   PingResponseSchema,
   SavedRegionSchema,
   SourceListSchema,
+  ipcContract,
   type AppInfo,
+  type IpcChannel,
+  type IpcRequest,
+  type IpcResponse,
   type Platform,
 } from '@novarec/shared';
 import { getDisplays, listSources } from './capture/enumerate.js';
 import { beginRegionSelect } from './capture/region-window.js';
 import { loadCaptureSettings, saveCaptureSettings } from './settings-store.js';
+import {
+  listOrphans,
+  pauseRecording,
+  recover,
+  resumeRecording,
+  startRecording,
+  stopRecording,
+  writeFragment,
+  writeInit,
+} from './recording/session.js';
+
+/** Register an invoke handler that validates the request AND response with Zod. */
+function handleChannel<C extends IpcChannel>(
+  channel: C,
+  handler: (request: IpcRequest<C>) => IpcResponse<C> | Promise<IpcResponse<C>>,
+): void {
+  const entry = ipcContract[channel];
+  ipcMain.handle(channel, async (_event: IpcMainInvokeEvent, raw: unknown) => {
+    const request = entry.request.parse(raw) as IpcRequest<C>;
+    return entry.response.parse(await handler(request));
+  });
+}
 
 function currentPlatform(): Platform {
   switch (process.platform) {
@@ -68,4 +94,25 @@ export function registerIpcHandlers(): void {
     const region = await beginRegionSelect();
     return region === null ? null : SavedRegionSchema.parse(region);
   });
+
+  // --- Recording (Phase 2) ---
+  handleChannel('recording:start', (req) => startRecording(req.trackKind));
+  handleChannel('recording:writeInit', async (req) => {
+    await writeInit(req.recordingId, req.bytes);
+    return { ok: true as const };
+  });
+  handleChannel('recording:writeFragment', async (req) => ({
+    segmentCount: await writeFragment(req.recordingId, req.bytes, req.durationMs),
+  }));
+  handleChannel('recording:pause', async (req) => {
+    await pauseRecording(req.recordingId, req.atMs);
+    return { ok: true as const };
+  });
+  handleChannel('recording:resume', async (req) => {
+    await resumeRecording(req.recordingId, req.atMs);
+    return { ok: true as const };
+  });
+  handleChannel('recording:stop', (req) => stopRecording(req.recordingId, req.atMs));
+  handleChannel('recording:listOrphans', () => listOrphans());
+  handleChannel('recording:recover', (req) => recover(req.dir));
 }

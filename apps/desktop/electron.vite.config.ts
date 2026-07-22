@@ -6,7 +6,12 @@ import tailwindcss from '@tailwindcss/vite';
 // Internal workspace packages ship TypeScript source (no build step), so they
 // must be BUNDLED into the main/preload output rather than externalized —
 // otherwise the packaged app would `require()` a `.ts` file at runtime.
-const INTERNAL_PACKAGES = ['@novarec/shared', '@novarec/ui', '@novarec/capture'];
+const INTERNAL_PACKAGES = [
+  '@novarec/shared',
+  '@novarec/ui',
+  '@novarec/capture',
+  '@novarec/encoder',
+];
 
 export default defineConfig({
   main: {
