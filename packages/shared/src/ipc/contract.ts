@@ -9,11 +9,12 @@ import {
   OrphanedRecordingSchema,
   RecoveryResultSchema,
   RecordingSummarySchema,
+  TrackConfigSchema,
 } from '../model/recording-io.js';
 
 const Bytes = z.instanceof(Uint8Array);
 const Ok = z.object({ ok: z.literal(true) });
-const RecordingRef = z.object({ recordingId: z.string() });
+const RecordingTrackRef = z.object({ recordingId: z.string(), trackId: z.string() });
 const RecordingAt = z.object({ recordingId: z.string(), atMs: z.number().nonnegative() });
 
 /**
@@ -82,17 +83,22 @@ export const ipcContract = {
     response: SavedRegionSchema.nullable(),
   },
 
-  // --- Recording (Phase 2): renderer streams encoded data; main persists it. ---
+  // --- Recording (Phase 2/3): renderer streams encoded data; main persists it.
+  // Multi-track: each enabled track is an independent segment writer. ---
   'recording:start': {
-    request: z.object({ trackKind: z.enum(['video', 'audio']) }),
-    response: z.object({ recordingId: z.string(), dir: z.string() }),
+    request: z.object({ tracks: z.array(TrackConfigSchema) }),
+    response: z.object({
+      recordingId: z.string(),
+      dir: z.string(),
+      tracks: z.array(z.object({ trackId: z.string(), dir: z.string() })),
+    }),
   },
   'recording:writeInit': {
-    request: RecordingRef.extend({ bytes: Bytes }),
+    request: RecordingTrackRef.extend({ bytes: Bytes }),
     response: Ok,
   },
   'recording:writeFragment': {
-    request: RecordingRef.extend({ bytes: Bytes, durationMs: z.number().nonnegative() }),
+    request: RecordingTrackRef.extend({ bytes: Bytes, durationMs: z.number().nonnegative() }),
     response: z.object({ segmentCount: z.number().int().nonnegative() }),
   },
   'recording:pause': { request: RecordingAt, response: Ok },
