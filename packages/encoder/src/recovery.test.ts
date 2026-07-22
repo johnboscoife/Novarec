@@ -101,18 +101,28 @@ describe('crash recovery', () => {
     expect(result.segmentCount).toBeGreaterThanOrEqual(1);
   });
 
-  it('recovers data from a hard-killed process', async () => {
+  it('recovers data from a hard-killed process', { timeout: 20_000 }, async () => {
     const vault = await tempVault();
     const dir = join(vault, 'killed');
     const subject = join(here, '__fixtures__', 'crash-subject.mjs');
 
     const child = spawn(process.execPath, [subject, dir], { stdio: 'ignore' });
-    await sleep(300); // let it seal several segments
-    child.kill('SIGKILL');
+    try {
+      // Deterministic under load: wait until the subject has actually sealed a
+      // segment before killing it, instead of racing a fixed timer.
+      const deadline = Date.now() + 15_000;
+      for (;;) {
+        const [candidate] = await scanForOrphans(vault);
+        if (candidate && candidate.sealedSegmentCount >= 1) break;
+        if (Date.now() > deadline) throw new Error('subject never sealed a segment');
+        await sleep(25);
+      }
+    } finally {
+      child.kill('SIGKILL');
+    }
     await sleep(80); // let the OS release file handles
 
-    const orphans = await scanForOrphans(vault);
-    const [orphan] = orphans;
+    const [orphan] = await scanForOrphans(vault);
     if (!orphan) throw new Error('expected an orphan after the kill');
     expect(orphan.sealedSegmentCount).toBeGreaterThanOrEqual(1);
 
