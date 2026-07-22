@@ -1,0 +1,14 @@
+{
+  "name": "@novarec/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^22.10.5",
+    "typescript": "^5.9.3"
+  }
+}
