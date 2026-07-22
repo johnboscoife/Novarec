@@ -1,0 +1,11 @@
+**/dist
+**/out
+**/.vite
+**/node_modules
+**/coverage
+**/playwright-report
+**/test-results
+pnpm-lock.yaml
+
+# The original product brief — kept verbatim, not reformatted.
+NovaRec-build-prompt.md
