@@ -5,6 +5,16 @@ import {
   SavedRegionSchema,
   SourceListSchema,
 } from '../model/capture.js';
+import {
+  OrphanedRecordingSchema,
+  RecoveryResultSchema,
+  RecordingSummarySchema,
+} from '../model/recording-io.js';
+
+const Bytes = z.instanceof(Uint8Array);
+const Ok = z.object({ ok: z.literal(true) });
+const RecordingRef = z.object({ recordingId: z.string() });
+const RecordingAt = z.object({ recordingId: z.string(), atMs: z.number().nonnegative() });
 
 /**
  * The single source of truth for every IPC message crossing the preload bridge.
@@ -71,6 +81,25 @@ export const ipcContract = {
     request: z.void(),
     response: SavedRegionSchema.nullable(),
   },
+
+  // --- Recording (Phase 2): renderer streams encoded data; main persists it. ---
+  'recording:start': {
+    request: z.object({ trackKind: z.enum(['video', 'audio']) }),
+    response: z.object({ recordingId: z.string(), dir: z.string() }),
+  },
+  'recording:writeInit': {
+    request: RecordingRef.extend({ bytes: Bytes }),
+    response: Ok,
+  },
+  'recording:writeFragment': {
+    request: RecordingRef.extend({ bytes: Bytes, durationMs: z.number().nonnegative() }),
+    response: z.object({ segmentCount: z.number().int().nonnegative() }),
+  },
+  'recording:pause': { request: RecordingAt, response: Ok },
+  'recording:resume': { request: RecordingAt, response: Ok },
+  'recording:stop': { request: RecordingAt, response: RecordingSummarySchema },
+  'recording:listOrphans': { request: z.void(), response: z.array(OrphanedRecordingSchema) },
+  'recording:recover': { request: z.object({ dir: z.string() }), response: RecoveryResultSchema },
 } as const;
 
 export type IpcContract = typeof ipcContract;
