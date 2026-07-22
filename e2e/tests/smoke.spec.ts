@@ -19,9 +19,11 @@ test('shell boots with Record, Meet, and Studio destinations', async () => {
   const app = await electron.launch({ args: [desktopMain], env });
   const window = await app.firstWindow();
 
-  await expect(window.getByRole('button', { name: /Record/ })).toBeVisible();
-  await expect(window.getByRole('button', { name: /Meet/ })).toBeVisible();
-  await expect(window.getByRole('button', { name: /Studio/ })).toBeVisible();
+  // Scope to the nav landmark — "Record" also appears as a recording button.
+  const nav = window.getByRole('navigation');
+  await expect(nav.getByRole('button', { name: /Record/ })).toBeVisible();
+  await expect(nav.getByRole('button', { name: /Meet/ })).toBeVisible();
+  await expect(nav.getByRole('button', { name: /Studio/ })).toBeVisible();
 
   await app.close();
 });
