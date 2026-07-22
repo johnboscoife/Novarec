@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false"
   },
   "dependencies": {
+    "@novarec/capture": "workspace:*",
     "@novarec/shared": "workspace:*",
     "@novarec/ui": "workspace:*",
     "@tanstack/react-query": "^5.101.4",

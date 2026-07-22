@@ -6,7 +6,7 @@ import tailwindcss from '@tailwindcss/vite';
 // Internal workspace packages ship TypeScript source (no build step), so they
 // must be BUNDLED into the main/preload output rather than externalized —
 // otherwise the packaged app would `require()` a `.ts` file at runtime.
-const INTERNAL_PACKAGES = ['@novarec/shared', '@novarec/ui'];
+const INTERNAL_PACKAGES = ['@novarec/shared', '@novarec/ui', '@novarec/capture'];
 
 export default defineConfig({
   main: {
@@ -21,7 +21,10 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin({ exclude: INTERNAL_PACKAGES })],
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/preload/index.ts') },
+        input: {
+          index: resolve(__dirname, 'src/preload/index.ts'),
+          overlay: resolve(__dirname, 'src/preload/overlay.ts'),
+        },
       },
     },
   },
@@ -29,7 +32,10 @@ export default defineConfig({
     root: resolve(__dirname, 'src/renderer'),
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/renderer/index.html') },
+        input: {
+          index: resolve(__dirname, 'src/renderer/index.html'),
+          overlay: resolve(__dirname, 'src/renderer/overlay.html'),
+        },
       },
     },
     plugins: [react(), tailwindcss()],

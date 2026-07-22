@@ -47,6 +47,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@novarec/capture':
+        specifier: workspace:*
+        version: link:../../packages/capture
       '@novarec/shared':
         specifier: workspace:*
         version: link:../../packages/shared

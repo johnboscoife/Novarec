@@ -1,4 +1,12 @@
-import type { AppInfo, IpcRequest, IpcResponse } from '@novarec/shared';
+import type {
+  AppInfo,
+  CaptureSettings,
+  DisplayInfo,
+  IpcRequest,
+  IpcResponse,
+  SavedRegion,
+  SourceList,
+} from '@novarec/shared';
 
 /**
  * The complete, explicit surface exposed to the renderer via contextBridge.
@@ -9,4 +17,11 @@ import type { AppInfo, IpcRequest, IpcResponse } from '@novarec/shared';
 export interface NovaRecApi {
   getInfo(): Promise<AppInfo>;
   ping(payload: IpcRequest<'app:ping'>): Promise<IpcResponse<'app:ping'>>;
+
+  // --- Capture (Phase 1) ---
+  getDisplays(): Promise<DisplayInfo[]>;
+  listSources(): Promise<SourceList>;
+  getCaptureSettings(): Promise<CaptureSettings>;
+  saveCaptureSettings(settings: CaptureSettings): Promise<CaptureSettings>;
+  beginRegionSelect(): Promise<SavedRegion | null>;
 }

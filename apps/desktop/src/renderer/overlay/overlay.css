@@ -1,0 +1,88 @@
+* {
+  margin: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#overlay-root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: transparent;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+}
+
+#backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(9, 9, 12, 0.38);
+}
+
+#selection {
+  position: fixed;
+  display: none;
+  border: 1.5px solid #4f9dff;
+  background: rgba(79, 157, 255, 0.1);
+}
+
+#dims {
+  position: fixed;
+  display: none;
+  padding: 3px 7px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  background: #111318;
+  border: 1px solid #2a2e37;
+  border-radius: 5px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+#hint {
+  position: fixed;
+  left: 50%;
+  top: 18px;
+  transform: translateX(-50%);
+  color: #e6e6e6;
+  background: rgba(0, 0, 0, 0.62);
+  padding: 7px 14px;
+  border-radius: 9px;
+  font-size: 13px;
+}
+
+#toolbar {
+  position: fixed;
+  display: none;
+  gap: 8px;
+}
+
+#toolbar button {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+}
+
+.tb-confirm {
+  background: #2f7bd6;
+  color: #fff;
+}
+
+.tb-cancel {
+  background: #2a2a30;
+  color: #ddd;
+}
