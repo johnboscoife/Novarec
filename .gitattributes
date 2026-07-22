@@ -1,0 +1,16 @@
+# Enforce LF in the working tree on every platform so Prettier's endOfLine: "lf"
+# and CI's format:check agree regardless of core.autocrlf.
+* text=auto eol=lf
+
+# Binaries git should never touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+*.exe binary
+*.node binary
