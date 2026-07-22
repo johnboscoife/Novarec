@@ -7,3 +7,4 @@ export * from './capture.js';
 export * from './recording-io.js';
 export * from './hotkeys.js';
 export * from './countdown.js';
+export * from './export.js';
