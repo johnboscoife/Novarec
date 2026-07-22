@@ -5,3 +5,5 @@ export * from './recording.js';
 export * from './scene.js';
 export * from './capture.js';
 export * from './recording-io.js';
+export * from './hotkeys.js';
+export * from './countdown.js';
