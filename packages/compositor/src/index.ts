@@ -1,11 +1,9 @@
-import type { Scene } from '@novarec/shared';
-
 /**
- * @novarec/compositor — the WebGL2 scene graph shared by Studio, Meet program
- * output, and the editor preview. Phase 9 implements the real renderer.
+ * @novarec/compositor — the scene-graph and layer geometry shared by Studio,
+ * Meet's program output, and the editor preview. The WebGL2 renderer (Phase 9
+ * integration) draws what these pure functions describe.
  */
 export const COMPOSITOR_PACKAGE = '@novarec/compositor' as const;
 
-export function countLayers(scene: Scene): number {
-  return scene.layers.length;
-}
+export * from './transform.js';
+export * from './scene.js';
