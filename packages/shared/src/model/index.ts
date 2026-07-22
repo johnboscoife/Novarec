@@ -10,3 +10,5 @@ export * from './countdown.js';
 export * from './export.js';
 export * from './meet.js';
 export * from './streaming.js';
+export * from './settings.js';
+export * from './telemetry.js';

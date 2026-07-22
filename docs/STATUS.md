@@ -1,0 +1,46 @@
+# NovaRec — build status
+
+Built phase-by-phase from `NovaRec-build-prompt.md`. Every phase's
+correctness-critical logic is delivered as **pure, unit-tested code**; the
+platform-native and live-media integration on top of it is called out per phase
+and, where it can't run in CI/sandbox, has a manual checklist.
+
+## Phase completion
+
+| Phase         | Tested core (automated)                                                 | Integration / manual (real machine)                    |
+| ------------- | ----------------------------------------------------------------------- | ------------------------------------------------------ |
+| 0 Foundation  | monorepo, strict TS, IPC contract, CI                                   | — (installer verified)                                 |
+| 1 Capture     | geometry/DPI/mixed-DPI split, FPS sustain, sources                      | live multi-monitor 60fps → `PHASE-1-VERIFICATION.md`   |
+| 2 Recorder    | append-only manifest, segment writer, **crash recovery**, disk-full     | real capture→disk→playback → `PHASE-2-VERIFICATION.md` |
+| 3 Multi-track | per-track writers, A/V sync drift model                                 | 4-track sync on hardware                               |
+| 4 Overlay     | cursor-zoom keyframes, redaction, markers→chapters, annotation/laser    | WebGL2 render + cursor-event capture                   |
+| 5 Hotkeys     | accelerator normalize, conflict detection, countdown                    | globalShortcut registration (in app)                   |
+| 6 Editor      | timeline ops (split/trim/ripple/remove-range), transcript cuts, silence | Whisper transcription, editor UI                       |
+| 7 Export      | FFmpeg argv builder, presets, export queue                              | bundled FFmpeg execution, hw fallback, ffprobe         |
+| 8 Meet        | LiveKit token signing (HS256), consent ledger, token route              | LiveKit SFU deploy, meeting UI                         |
+| 9 Studio      | compositor transform/scene math, stream targets, adaptive bitrate       | WebGL2 program, RTMP egress, virtual camera            |
+| 10 Polish     | telemetry opt-in gate, app settings                                     | onboarding UI, signing/notarization, a11y audit        |
+
+## Cross-cutting guarantees encoded as tests
+
+- **Never lose a recording** — append-only manifest + fsync-on-seal + crash
+  recovery, proved by a real killed-subprocess test and disk-full injection.
+- **Tracks stay separate until export** — per-track segment writers.
+- **No telemetry without opt-in** — `prepareTelemetry` returns null unless opted
+  in and strips PII; default settings are opt-out.
+- **Recording consent** — `allConsented` gates meeting recording.
+- **No `any`, strict TS, Zod-validated IPC both ends** — enforced by ESLint + CI.
+
+## Architecture decisions
+
+See `docs/DECISIONS/` — ADR-0001..0007 record the monorepo/tooling, version
+strategy, capture backend, mixed-DPI region model, MediaRecorder choice,
+multi-track architecture, and the overlay engine.
+
+## Not yet built (integration layers)
+
+The native/live surfaces above (WebGL2 renderer, whisper.cpp, bundled FFmpeg
+egress, LiveKit SFU, virtual-camera drivers, signed installers, full editor/
+studio/meet UIs) are the next work. Each sits behind a tested core that defines
+its behavior, so they are wiring against a verified contract rather than
+green-field logic.
