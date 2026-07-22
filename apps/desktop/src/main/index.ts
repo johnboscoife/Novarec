@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { app, BrowserWindow, shell } from 'electron';
 import { registerIpcHandlers } from './ipc.js';
 import { installContentSecurityPolicy } from './security.js';
+import { registerHotkeys, unregisterHotkeys } from './hotkeys.js';
 
 const isDev = !app.isPackaged;
 
@@ -45,6 +46,7 @@ app
   .then(() => {
     installContentSecurityPolicy(isDev);
     registerIpcHandlers();
+    registerHotkeys(); // system-wide, works even when NovaRec is unfocused
     createMainWindow();
 
     app.on('activate', () => {
@@ -55,6 +57,8 @@ app
     console.error('Failed to start NovaRec main process:', error);
     app.quit();
   });
+
+app.on('will-quit', () => unregisterHotkeys());
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

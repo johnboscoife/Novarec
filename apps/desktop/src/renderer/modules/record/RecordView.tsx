@@ -1,8 +1,10 @@
-import { useEffect, useState, type ReactElement, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { sustainVerdict, type SustainVerdict } from '@novarec/capture';
 import {
   SUPPORTED_TARGET_FPS,
+  countdownSequence,
   type CaptureSource,
+  type HotkeyAction,
   type SavedRegion,
   type TargetFps,
   type TrackConfig,
@@ -46,6 +48,7 @@ export function RecordView(): ReactElement {
   const [systemAudioOn, setSystemAudioOn] = useState(false);
   const [cameraDeviceId, setCameraDeviceId] = useState<string | null>(null);
   const [micDeviceId, setMicDeviceId] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState<number | null>(null);
 
   // Seed local state from persisted settings once loaded.
   useEffect(() => {
@@ -152,8 +155,51 @@ export function RecordView(): ReactElement {
 
   const canRecord = selectedSourceId !== null || cameraOn || micOn || systemAudioOn;
 
+  function beginRecording(): void {
+    if (!canRecord || recorder.state !== 'idle' || countdown !== null) return;
+    const sequence = countdownSequence(3);
+    const configs = buildTrackConfigs();
+    if (sequence.length === 0) {
+      void recorder.start(configs, targetFps);
+      return;
+    }
+    let index = 0;
+    setCountdown(sequence[0] ?? null);
+    const timer = window.setInterval(() => {
+      index += 1;
+      if (index >= sequence.length) {
+        window.clearInterval(timer);
+        setCountdown(null);
+        void recorder.start(configs, targetFps);
+      } else {
+        setCountdown(sequence[index] ?? null);
+      }
+    }, 1000);
+  }
+
+  // Global hotkeys drive the recording lifecycle even when the app is unfocused.
+  const hotkeyHandler = useRef<(action: HotkeyAction) => void>(() => undefined);
+  hotkeyHandler.current = (action) => {
+    if (action === 'startStop') {
+      if (recorder.state === 'idle') beginRecording();
+      else void recorder.stop();
+    } else if (action === 'pauseResume') {
+      if (recorder.state === 'recording') void recorder.pause();
+      else if (recorder.state === 'paused') void recorder.resume();
+    } else if (action === 'panicStop') {
+      void recorder.stop();
+    }
+  };
+  useEffect(() => window.novarec.onHotkey((action) => hotkeyHandler.current(action)), []);
+
   return (
-    <section className="flex h-full flex-col p-8">
+    <section className="relative flex h-full flex-col p-8">
+      {countdown !== null && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/80">
+          <span className="text-8xl font-semibold tabular-nums text-white">{countdown}</span>
+        </div>
+      )}
+
       <header className="mb-6">
         <p className="text-xs font-medium uppercase tracking-widest text-neutral-500">Record</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Set up your capture</h1>
@@ -164,8 +210,8 @@ export function RecordView(): ReactElement {
       <div className="mb-6">
         <RecordingControls
           recorder={recorder}
-          canStart={canRecord && recorder.state === 'idle'}
-          onStart={() => void recorder.start(buildTrackConfigs(), targetFps)}
+          canStart={canRecord && recorder.state === 'idle' && countdown === null}
+          onStart={beginRecording}
         />
       </div>
 

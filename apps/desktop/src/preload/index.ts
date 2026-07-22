@@ -1,4 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { IpcRendererEvent } from 'electron';
+import type { HotkeyAction } from '@novarec/shared';
 import type { NovaRecApi } from './api.js';
 
 const api: NovaRecApi = {
@@ -19,6 +21,12 @@ const api: NovaRecApi = {
   stopRecording: (payload) => ipcRenderer.invoke('recording:stop', payload),
   listOrphans: () => ipcRenderer.invoke('recording:listOrphans'),
   recoverRecording: (payload) => ipcRenderer.invoke('recording:recover', payload),
+
+  onHotkey: (callback) => {
+    const listener = (_event: IpcRendererEvent, action: HotkeyAction) => callback(action);
+    ipcRenderer.on('hotkey:action', listener);
+    return () => ipcRenderer.removeListener('hotkey:action', listener);
+  },
 };
 
 // contextIsolation is on, so this is the only channel the renderer can reach.

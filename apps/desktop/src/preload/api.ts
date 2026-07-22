@@ -2,6 +2,7 @@ import type {
   AppInfo,
   CaptureSettings,
   DisplayInfo,
+  HotkeyAction,
   IpcRequest,
   IpcResponse,
   SavedRegion,
@@ -42,4 +43,7 @@ export interface NovaRecApi {
   recoverRecording(
     payload: IpcRequest<'recording:recover'>,
   ): Promise<IpcResponse<'recording:recover'>>;
+
+  // --- Global hotkeys (Phase 5) --- returns an unsubscribe function.
+  onHotkey(callback: (action: HotkeyAction) => void): () => void;
 }
