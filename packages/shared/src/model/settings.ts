@@ -11,6 +11,7 @@ export const AppSettingsSchema = z.object({
   vaultMode: z.boolean(), // encrypt media at rest
   storageLocation: z.string().nullable(),
   storageQuotaGb: z.number().positive().nullable(),
+  onboardingComplete: z.boolean(),
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 
@@ -21,4 +22,5 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   vaultMode: false,
   storageLocation: null,
   storageQuotaGb: null,
+  onboardingComplete: false,
 };

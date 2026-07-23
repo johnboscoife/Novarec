@@ -12,6 +12,7 @@ import {
   TrackConfigSchema,
 } from '../model/recording-io.js';
 import { ExportSettingsSchema } from '../model/export.js';
+import { AppSettingsSchema } from '../model/settings.js';
 
 const Bytes = z.instanceof(Uint8Array);
 const Ok = z.object({ ok: z.literal(true) });
@@ -115,6 +116,10 @@ export const ipcContract = {
   },
   // Reveal a produced file in the OS file manager.
   'shell:reveal': { request: z.object({ path: z.string() }), response: Ok },
+
+  // --- App settings (Phase 10) ---
+  'settings:get': { request: z.void(), response: AppSettingsSchema },
+  'settings:save': { request: AppSettingsSchema, response: AppSettingsSchema },
 } as const;
 
 export type IpcContract = typeof ipcContract;
