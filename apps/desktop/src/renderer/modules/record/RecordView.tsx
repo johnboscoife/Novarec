@@ -463,7 +463,9 @@ export function RecordView(): ReactElement {
                 <Metric label="Jitter">{probe.metrics.jitterMs.toFixed(1)} ms</Metric>
                 <Metric label="This machine can sustain">
                   <span className="font-semibold text-app">
-                    {probe.maxSustainableFps > 0 ? `${probe.maxSustainableFps} fps` : '—'}
+                    {probe.maxSustainableFps > 0
+                      ? `${probe.maxSustainableFps} fps`
+                      : 'Below 24 fps'}
                   </span>
                 </Metric>
               </div>

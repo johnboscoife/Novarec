@@ -3,6 +3,7 @@ import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  extractFfmpegError,
   ffmpegAvailable,
   parseFfmpegProgressMs,
   resolveFfmpegPath,
@@ -20,6 +21,16 @@ describe('parseFfmpegProgressMs (pure)', () => {
   });
   it('returns null for lines without a time field', () => {
     expect(parseFfmpegProgressMs('Press [q] to stop')).toBeNull();
+  });
+});
+
+describe('extractFfmpegError (pure)', () => {
+  it('surfaces the meaningful error line from stderr', () => {
+    const stderr = "ffmpeg version 6.1\n  built with gcc\nUnknown encoder 'h264_nvenc'\n";
+    expect(extractFfmpegError(stderr)).toContain("Unknown encoder 'h264_nvenc'");
+  });
+  it('falls back to the last line when nothing matches', () => {
+    expect(extractFfmpegError('line one\nline two\n')).toBe('line two');
   });
 });
 
@@ -51,6 +62,8 @@ describe.skipIf(!hasFfmpeg)('export with real FFmpeg', () => {
         input,
       ]);
 
+      // hardwareEncode: true exercises the automatic software fallback when the
+      // hardware encoder (h264_nvenc) isn't available in this FFmpeg build.
       const settings: ExportSettings = {
         container: 'mp4',
         videoCodec: 'h264',
@@ -59,7 +72,7 @@ describe.skipIf(!hasFfmpeg)('export with real FFmpeg', () => {
         height: 120,
         fps: 30,
         rateControl: { mode: 'crf', crf: 28 },
-        hardwareEncode: false,
+        hardwareEncode: true,
       };
 
       let lastProgress = 0;

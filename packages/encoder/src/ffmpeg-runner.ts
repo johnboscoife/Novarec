@@ -32,6 +32,18 @@ export interface RunFfmpegOptions {
   signal?: AbortSignal;
 }
 
+/** Pull the most useful line out of FFmpeg's stderr for an error message. */
+export function extractFfmpegError(stderr: string): string {
+  const lines = stderr
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const meaningful = [...lines]
+    .reverse()
+    .find((l) => /error|unknown|invalid|not found|no such|failed/i.test(l));
+  return meaningful ?? lines[lines.length - 1] ?? '';
+}
+
 export function runFfmpeg(
   ffmpegPath: string,
   args: readonly string[],
@@ -39,19 +51,29 @@ export function runFfmpeg(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(ffmpegPath, [...args], options.signal ? { signal: options.signal } : {});
+    let stderrTail = '';
 
     child.stderr.on('data', (chunk: Buffer) => {
-      if (!options.onProgress) return;
-      for (const line of chunk.toString().split(/\r?\n/)) {
-        const ms = parseFfmpegProgressMs(line);
-        if (ms !== null) options.onProgress(ms);
+      const text = chunk.toString();
+      stderrTail = (stderrTail + text).slice(-4000);
+      if (options.onProgress) {
+        for (const line of text.split(/\r?\n/)) {
+          const ms = parseFfmpegProgressMs(line);
+          if (ms !== null) options.onProgress(ms);
+        }
       }
     });
 
     child.on('error', reject);
     child.on('close', (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`ffmpeg exited with code ${String(code)}`));
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      const detail = extractFfmpegError(stderrTail);
+      reject(
+        new Error(detail ? `FFmpeg failed: ${detail}` : `FFmpeg exited with code ${String(code)}`),
+      );
     });
   });
 }

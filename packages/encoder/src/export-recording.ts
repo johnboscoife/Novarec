@@ -18,14 +18,28 @@ export interface ExportRecordingOptions {
 }
 
 export async function exportRecording(options: ExportRecordingOptions): Promise<string> {
-  const args = buildFfmpegArgs(
-    options.settings,
-    options.inputs.map((path) => ({ path })),
-    options.outputPath,
-  );
-  await runFfmpeg(options.ffmpegPath, args, {
+  const inputs = options.inputs.map((path) => ({ path }));
+  const runOpts = {
     ...(options.onProgress ? { onProgress: options.onProgress } : {}),
     ...(options.signal ? { signal: options.signal } : {}),
-  });
+  };
+
+  try {
+    await runFfmpeg(
+      options.ffmpegPath,
+      buildFfmpegArgs(options.settings, inputs, options.outputPath),
+      runOpts,
+    );
+  } catch (error) {
+    // Automatic software fallback: hardware encoders (e.g. h264_nvenc) aren't
+    // present on every machine or in every FFmpeg build.
+    if (!options.settings.hardwareEncode) throw error;
+    const software = { ...options.settings, hardwareEncode: false };
+    await runFfmpeg(
+      options.ffmpegPath,
+      buildFfmpegArgs(software, inputs, options.outputPath),
+      runOpts,
+    );
+  }
   return options.outputPath;
 }
