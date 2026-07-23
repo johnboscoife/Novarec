@@ -37,7 +37,9 @@ tested engines with live UIs in progress.
 - Meet needs a running LiveKit SFU and its meeting UI.
 - Studio needs the WebGL2 renderer, RTMP egress, and virtual-camera drivers.
 - Camera+screen compositing (WebGL2) and local Whisper transcription are pending.
-- Installers are unsigned; production release needs code-signing/notarization
-  certificates and auto-update hosting.
+- Installers are self-contained (FFmpeg is bundled) but **unsigned**. A
+  tag-triggered release workflow (`.github/workflows/release.yml`) builds all
+  three platforms; adding code-signing/notarization secrets makes them
+  production-ready. Auto-update hosting is still to configure.
 
 See [docs/STATUS.md](STATUS.md) for the full tested-vs-integration breakdown.
