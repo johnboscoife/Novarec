@@ -62,9 +62,16 @@ export function clampSource(s: SceneSource): SceneSource {
   return { ...s, x, y, width, height };
 }
 
-/** A source's identity for media acquisition (changes force a re-acquire). */
-export function mediaKey(s: SceneSource): string {
-  return `${s.id}:${s.kind}:${s.deviceId ?? ''}:${s.screenSourceId ?? ''}:${s.dataUrl ? 'img' : ''}`;
+/**
+ * The underlying media a source draws — WITHOUT its instance id, so the same
+ * camera/screen/image is acquired once and shared across the preview and program
+ * canvases (a camera can't be opened twice reliably).
+ */
+export function mediaSignature(s: SceneSource): string {
+  if (s.kind === 'camera') return `camera:${s.deviceId ?? 'default'}`;
+  if (s.kind === 'screen') return `screen:${s.screenSourceId ?? 'default'}`;
+  if (s.kind === 'image') return `image:${s.dataUrl?.slice(0, 96) ?? ''}`;
+  return `text:${s.id}`;
 }
 
 let seq = 0;

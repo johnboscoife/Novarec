@@ -73,8 +73,10 @@ export function WebcamOverlay(): ReactElement {
   const container: CSSProperties = {
     position: 'fixed',
     inset: 0,
+    boxSizing: 'border-box',
     overflow: 'hidden',
-    background: error ? 'rgba(10,10,15,0.9)' : 'transparent',
+    background: error ? 'rgba(10,10,15,0.92)' : '#000',
+    border: '3px solid rgba(255,255,255,0.92)',
     borderRadius: radius,
     cursor: 'move',
   };
@@ -82,16 +84,28 @@ export function WebcamOverlay(): ReactElement {
     width: '100%',
     height: '100%',
     objectFit: 'cover',
-    borderRadius: radius,
+    display: 'block',
     transform: 'scaleX(-1)', // mirror, like every webcam preview
   };
 
   return (
     <div className="wc-drag" style={container}>
       {error ? (
-        <div style={{ padding: 12, color: '#f87171', font: '12px system-ui' }}>{error}</div>
+        <div
+          style={{
+            display: 'grid',
+            placeItems: 'center',
+            height: '100%',
+            padding: 12,
+            textAlign: 'center',
+            color: '#f87171',
+            font: '12px system-ui',
+          }}
+        >
+          {error}
+        </div>
       ) : (
-        <video ref={videoRef} muted playsInline style={video} />
+        <video ref={videoRef} muted playsInline autoPlay style={video} />
       )}
     </div>
   );

@@ -1,12 +1,16 @@
-import { useRef, useState, type ChangeEvent, type ReactElement } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type ReactElement } from 'react';
 import { EXPORT_PRESETS, type TrackConfig } from '@novarec/shared';
 import { useMediaDevices, useSources } from '../record/useCaptureData.js';
 import { useRecorder } from '../record/useRecorder.js';
+import { useAppSettings } from '../settings/useAppSettings.js';
 import { useExportStore } from '../../exportStore.js';
 import { Compositor } from './Compositor.js';
+import { useSceneMedia } from './useSceneMedia.js';
 import { clampSource, defaultSource, type SceneSource, type SceneSourceKind } from './scene.js';
 
-const SCENE_PRESET = EXPORT_PRESETS[0]!; // 1080p MP4
+function presetSettings(id: string) {
+  return (EXPORT_PRESETS.find((p) => p.id === id) ?? EXPORT_PRESETS[0]!).settings;
+}
 
 function formatElapsed(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -16,43 +20,66 @@ function formatElapsed(ms: number): string {
 }
 
 export function StudioView(): ReactElement {
-  const [sources, setSources] = useState<SceneSource[]>([]);
+  const [previewSources, setPreviewSources] = useState<SceneSource[]>([]);
+  const [programSources, setProgramSources] = useState<SceneSource[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [micOn, setMicOn] = useState(false);
 
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const programCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const autoExportedDir = useRef<string | null>(null);
 
   const recorder = useRecorder();
   const exportJob = useExportStore();
+  const appSettings = useAppSettings();
   const devices = useMediaDevices();
   const sourceList = useSources();
   const cameras = (devices.data ?? []).filter((d) => d.kind === 'camera');
   const screens = sourceList.data?.screens ?? [];
 
-  const selected = sources.find((s) => s.id === selectedId) ?? null;
+  // One shared media pool feeds both canvases (a camera is opened only once).
+  const getMedia = useSceneMedia([...previewSources, ...programSources]);
+
+  const selected = previewSources.find((s) => s.id === selectedId) ?? null;
   const recording = recorder.state !== 'idle';
+
+  // Auto-export the scene recording when it stops, if enabled in Settings.
+  useEffect(() => {
+    const dir = recorder.lastRecordingDir;
+    if (
+      recorder.state === 'idle' &&
+      dir &&
+      appSettings.data?.autoExportOnStop &&
+      autoExportedDir.current !== dir
+    ) {
+      autoExportedDir.current = dir;
+      exportJob.start(dir, presetSettings(appSettings.data?.exportPreset ?? 'youtube'));
+    }
+  }, [recorder.state, recorder.lastRecordingDir, appSettings.data, exportJob]);
 
   function addSource(kind: SceneSourceKind): void {
     const id = crypto.randomUUID();
     const src = defaultSource(kind, id);
     if (kind === 'camera' && cameras[0]) src.deviceId = cameras[0].deviceId ?? null;
     if (kind === 'screen' && screens[0]) src.screenSourceId = screens[0].id;
-    setSources((prev) => [...prev, src]);
+    setPreviewSources((prev) => [...prev, src]);
     setSelectedId(id);
   }
 
   function updateSource(id: string, patch: Partial<SceneSource>): void {
-    setSources((prev) => prev.map((s) => (s.id === id ? clampSource({ ...s, ...patch }) : s)));
+    setPreviewSources((prev) =>
+      prev.map((s) => (s.id === id ? clampSource({ ...s, ...patch }) : s)),
+    );
   }
 
   function removeSource(id: string): void {
-    setSources((prev) => prev.filter((s) => s.id !== id));
+    setPreviewSources((prev) => prev.filter((s) => s.id !== id));
     if (selectedId === id) setSelectedId(null);
   }
 
   function move(id: string, dir: -1 | 1): void {
-    setSources((prev) => {
+    setPreviewSources((prev) => {
       const i = prev.findIndex((s) => s.id === id);
       const j = i + dir;
       if (i < 0 || j < 0 || j >= prev.length) return prev;
@@ -63,6 +90,11 @@ export function StudioView(): ReactElement {
     });
   }
 
+  function transition(): void {
+    // Push the edited preview to the live program output.
+    setProgramSources(previewSources.map((s) => ({ ...s })));
+  }
+
   function onImageFile(e: ChangeEvent<HTMLInputElement>): void {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -70,7 +102,7 @@ export function StudioView(): ReactElement {
     const reader = new FileReader();
     reader.onload = () => {
       const id = crypto.randomUUID();
-      setSources((prev) => [
+      setPreviewSources((prev) => [
         ...prev,
         { ...defaultSource('image', id), dataUrl: String(reader.result), name: file.name },
       ]);
@@ -84,13 +116,11 @@ export function StudioView(): ReactElement {
       void recorder.stop();
       return;
     }
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const canvas = programCanvasRef.current;
+    if (!canvas || programSources.length === 0) return;
     const stream = canvas.captureStream(30);
-    // sourceId is omitted: we inject the canvas stream directly, so the recorder
-    // never calls getDisplayMedia for this track.
     const configs: TrackConfig[] = [
-      { id: 'screen', kind: 'screen', label: 'Scene', enabled: true, gain: 1, monitor: false },
+      { id: 'screen', kind: 'screen', label: 'Program', enabled: true, gain: 1, monitor: false },
     ];
     if (micOn) {
       configs.push({
@@ -106,7 +136,7 @@ export function StudioView(): ReactElement {
   }
 
   return (
-    <section className="flex h-full flex-col p-6">
+    <section className="flex h-full flex-col overflow-auto p-6">
       <header className="mb-4 flex items-end justify-between gap-4">
         <div>
           <p className="text-xs font-medium uppercase tracking-widest text-muted-app">Studio</p>
@@ -131,19 +161,19 @@ export function StudioView(): ReactElement {
           </label>
           <button
             type="button"
-            disabled={sources.length === 0}
+            disabled={programSources.length === 0}
             onClick={toggleRecord}
             className={`rounded-lg px-4 py-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-surface2 disabled:text-muted-app ${
               recording ? 'bg-neutral-700 hover:bg-neutral-600' : 'bg-red-600 hover:bg-red-500'
             }`}
           >
-            {recording ? 'Stop' : 'Record scene'}
+            {recording ? 'Stop' : 'Record program'}
           </button>
         </div>
       </header>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <span className="text-xs text-muted-app">Add source:</span>
+        <span className="text-xs text-muted-app">Add to preview:</span>
         <AddButton onClick={() => addSource('screen')}>Screen</AddButton>
         <AddButton onClick={() => addSource('camera')}>Camera</AddButton>
         <AddButton onClick={() => fileRef.current?.click()}>Image</AddButton>
@@ -153,53 +183,108 @@ export function StudioView(): ReactElement {
             type="button"
             onClick={() =>
               recorder.lastRecordingDir &&
-              exportJob.start(recorder.lastRecordingDir, SCENE_PRESET.settings)
+              exportJob.start(
+                recorder.lastRecordingDir,
+                presetSettings(appSettings.data?.exportPreset ?? 'youtube'),
+              )
             }
             className="ml-auto rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-500"
           >
-            Export last scene · 1080p
+            Export last scene
           </button>
         )}
       </div>
 
-      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1fr_320px]">
-        <div className="min-w-0">
+      {/* Preview (editable) and Program (live output) — OBS-style Studio Mode. */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <CanvasPane label="Preview" hint="Arrange here" tone="preview">
           <Compositor
-            sources={sources}
+            sources={previewSources}
             selectedId={selectedId}
+            getMedia={getMedia}
+            canvasRef={previewCanvasRef}
+            interactive
             onSelect={setSelectedId}
             onUpdate={updateSource}
-            canvasRef={canvasRef}
           />
-          <p className="mt-2 text-xs text-muted-app">
-            Drag a source to move it; drag the blue corner to resize. The scene records at 1080p —
-            stay on this tab while recording.
-          </p>
-          {recorder.error && <p className="mt-1 text-xs text-red-400">{recorder.error}</p>}
-        </div>
+        </CanvasPane>
+        <CanvasPane label="Program" hint={recording ? 'Recording' : 'Live'} tone="program">
+          <Compositor
+            sources={programSources}
+            selectedId={null}
+            getMedia={getMedia}
+            canvasRef={programCanvasRef}
+            interactive={false}
+          />
+        </CanvasPane>
+      </div>
 
-        <div className="flex min-h-0 flex-col gap-4 overflow-auto">
-          <SourcesPanel
-            sources={sources}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            onRemove={removeSource}
-            onToggle={(id, v) => updateSource(id, { visible: v })}
-            onMove={move}
+      <div className="my-4 flex items-center justify-center">
+        <button
+          type="button"
+          disabled={previewSources.length === 0}
+          onClick={transition}
+          className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white transition enabled:hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-surface2 disabled:text-muted-app"
+        >
+          Transition to Program →
+        </button>
+      </div>
+
+      <p className="mb-4 text-center text-xs text-muted-app">
+        Drag to move, drag the blue corner to resize. Edit in Preview, then Transition to send it
+        live to Program — the Program output is what records. Stay on this tab while recording.
+      </p>
+      {recorder.error && <p className="mb-4 text-center text-xs text-red-400">{recorder.error}</p>}
+
+      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+        <SourcesPanel
+          sources={previewSources}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onRemove={removeSource}
+          onToggle={(id, v) => updateSource(id, { visible: v })}
+          onMove={move}
+        />
+        {selected && (
+          <PropertiesPanel
+            source={selected}
+            cameras={cameras.map((c) => ({ id: c.deviceId ?? c.id, label: c.label }))}
+            screens={screens.map((s) => ({ id: s.id, label: s.name }))}
+            onUpdate={(patch) => updateSource(selected.id, patch)}
           />
-          {selected && (
-            <PropertiesPanel
-              source={selected}
-              cameras={cameras.map((c) => ({ id: c.deviceId ?? c.id, label: c.label }))}
-              screens={screens.map((s) => ({ id: s.id, label: s.name }))}
-              onUpdate={(patch) => updateSource(selected.id, patch)}
-            />
-          )}
-        </div>
+        )}
       </div>
 
       <input ref={fileRef} type="file" accept="image/*" hidden onChange={onImageFile} />
     </section>
+  );
+}
+
+function CanvasPane({
+  label,
+  hint,
+  tone,
+  children,
+}: {
+  label: string;
+  hint: string;
+  tone: 'preview' | 'program';
+  children: ReactElement;
+}): ReactElement {
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-app">
+          {label}
+        </span>
+        <span
+          className={`text-xs font-medium ${tone === 'program' ? 'text-red-400' : 'text-blue-400'}`}
+        >
+          {hint}
+        </span>
+      </div>
+      {children}
+    </div>
   );
 }
 
@@ -233,7 +318,7 @@ function SourcesPanel({
   return (
     <div className="rounded-2xl border border-app bg-surface p-4">
       <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-app">
-        Sources ({sources.length})
+        Preview sources ({sources.length})
       </h2>
       {sources.length === 0 ? (
         <p className="text-sm text-muted-app">Add a screen, camera, image, or text to begin.</p>
