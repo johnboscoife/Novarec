@@ -239,13 +239,13 @@ export function RecordView(): ReactElement {
   return (
     <section className="relative flex h-full flex-col p-8">
       {countdown !== null && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/80">
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/70">
           <span className="text-8xl font-semibold tabular-nums text-white">{countdown}</span>
         </div>
       )}
 
       <header className="mb-6">
-        <p className="text-xs font-medium uppercase tracking-widest text-neutral-500">Record</p>
+        <p className="text-xs font-medium uppercase tracking-widest text-muted-app">Record</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Set up your capture</h1>
       </header>
 
@@ -260,11 +260,11 @@ export function RecordView(): ReactElement {
       </div>
 
       {recorder.state === 'idle' && recorder.lastRecordingDir && (
-        <div className="mb-6 rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
+        <div className="mb-6 rounded-xl border border-app bg-surface p-4">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
               <p className="text-sm font-medium">Last recording ready</p>
-              <p className="truncate text-xs text-neutral-500">
+              <p className="truncate text-xs text-muted-app">
                 {exportedPath ?? recorder.lastRecordingDir}
               </p>
             </div>
@@ -282,7 +282,7 @@ export function RecordView(): ReactElement {
             </button>
           </div>
           {exporting && exportProgress !== null && (
-            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-neutral-800">
+            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface2">
               <div
                 className="h-full bg-blue-500 transition-[width]"
                 style={{ width: `${Math.round(exportProgress * 100)}%` }}
@@ -352,7 +352,7 @@ export function RecordView(): ReactElement {
                   className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
                     targetFps === fps
                       ? 'bg-blue-600 text-white'
-                      : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
+                      : 'bg-surface2 text-app2 hover:bg-surface2'
                   }`}
                 >
                   {fps}
@@ -364,9 +364,9 @@ export function RecordView(): ReactElement {
           <Panel title="Region">
             {region ? (
               <div className="flex items-center justify-between">
-                <div className="text-sm text-neutral-300">
+                <div className="text-sm text-app2">
                   {Math.round(region.rect.width)} × {Math.round(region.rect.height)}
-                  <span className="ml-2 text-xs text-neutral-500">
+                  <span className="ml-2 text-xs text-muted-app">
                     at ({Math.round(region.rect.x)}, {Math.round(region.rect.y)})
                     {region.displayId === null ? ' · spans monitors' : ''}
                   </span>
@@ -375,14 +375,14 @@ export function RecordView(): ReactElement {
                   <button
                     type="button"
                     onClick={selectRegion}
-                    className="rounded-md bg-neutral-800 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-700"
+                    className="rounded-md bg-surface2 px-3 py-1.5 text-xs text-app2 hover:bg-surface2"
                   >
                     Re-select
                   </button>
                   <button
                     type="button"
                     onClick={clearRegion}
-                    className="rounded-md bg-neutral-800 px-3 py-1.5 text-xs text-neutral-400 hover:bg-neutral-700"
+                    className="rounded-md bg-surface2 px-3 py-1.5 text-xs text-muted-app hover:bg-surface2"
                   >
                     Clear
                   </button>
@@ -392,7 +392,7 @@ export function RecordView(): ReactElement {
               <button
                 type="button"
                 onClick={selectRegion}
-                className="w-full rounded-lg bg-neutral-800 px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-700"
+                className="w-full rounded-lg bg-surface2 px-3 py-2 text-sm text-app2 hover:bg-surface2"
               >
                 Select a region…
               </button>
@@ -417,17 +417,17 @@ export function RecordView(): ReactElement {
                 deviceId={micDeviceId}
                 onDevice={setMicDeviceId}
               />
-              <label className="flex items-center gap-2 text-sm text-neutral-300">
+              <label className="flex items-center gap-2 text-sm text-app2">
                 <input
                   type="checkbox"
                   checked={systemAudioOn}
                   onChange={(e) => setSystemAudioOn(e.target.checked)}
                   className="accent-blue-500"
                 />
-                System audio <span className="text-xs text-neutral-500">(Windows)</span>
+                System audio <span className="text-xs text-muted-app">(Windows)</span>
               </label>
             </div>
-            <p className="mt-2 text-xs text-neutral-500">
+            <p className="mt-2 text-xs text-muted-app">
               Screen comes from the selected source. Each track is saved separately and stays in
               sync.
             </p>
@@ -438,7 +438,7 @@ export function RecordView(): ReactElement {
               type="button"
               disabled={!selectedSourceId || probing}
               onClick={runProbe}
-              className="w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition enabled:hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-neutral-800 disabled:text-neutral-500"
+              className="w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition enabled:hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-surface2 disabled:text-muted-app"
             >
               {probing
                 ? 'Probing (3s)…'
@@ -462,7 +462,7 @@ export function RecordView(): ReactElement {
                 <Metric label="Dropped">{(probe.metrics.droppedRatio * 100).toFixed(1)}%</Metric>
                 <Metric label="Jitter">{probe.metrics.jitterMs.toFixed(1)} ms</Metric>
                 <Metric label="This machine can sustain">
-                  <span className="font-semibold text-neutral-100">
+                  <span className="font-semibold text-app">
                     {probe.maxSustainableFps > 0 ? `${probe.maxSustainableFps} fps` : '—'}
                   </span>
                 </Metric>
@@ -472,7 +472,7 @@ export function RecordView(): ReactElement {
         </div>
       </div>
 
-      <footer className="mt-6 flex items-center gap-2 text-xs text-neutral-600">
+      <footer className="mt-6 flex items-center gap-2 text-xs text-dim-app">
         <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
         {info.data
           ? `${info.data.name} ${info.data.version} · ${displays.data?.length ?? 0} display(s) · ${info.data.platform}`
@@ -493,11 +493,11 @@ function SourceGroup({
 }): ReactElement {
   return (
     <div>
-      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-app">
         {title}
       </h2>
       {loading ? (
-        <p className="text-sm text-neutral-600">Enumerating…</p>
+        <p className="text-sm text-dim-app">Enumerating…</p>
       ) : (
         <div className="space-y-1.5">{children}</div>
       )}
@@ -524,21 +524,19 @@ function SourceRow({
       onClick={onSelect}
       disabled={muted}
       className={`w-full rounded-lg border px-3 py-2 text-left transition ${
-        selected
-          ? 'border-blue-500 bg-blue-500/10'
-          : 'border-neutral-800 bg-neutral-900/40 hover:border-neutral-700'
+        selected ? 'border-blue-500 bg-blue-500/10' : 'border-app bg-surface hover:border-app'
       } ${muted ? 'cursor-default opacity-70' : ''}`}
     >
-      <div className="truncate text-sm text-neutral-200">{label}</div>
-      {detail && <div className="truncate text-xs text-neutral-500">{detail}</div>}
+      <div className="truncate text-sm text-app2">{label}</div>
+      {detail && <div className="truncate text-xs text-muted-app">{detail}</div>}
     </button>
   );
 }
 
 function Panel({ title, children }: { title: string; children: ReactNode }): ReactElement {
   return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+    <div className="rounded-xl border border-app bg-surface p-4">
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-app">
         {title}
       </h2>
       {children}
@@ -549,8 +547,8 @@ function Panel({ title, children }: { title: string; children: ReactNode }): Rea
 function Metric({ label, children }: { label: string; children: ReactNode }): ReactElement {
   return (
     <div className="flex items-center justify-between">
-      <span className="text-neutral-500">{label}</span>
-      <span className="text-neutral-200">{children}</span>
+      <span className="text-muted-app">{label}</span>
+      <span className="text-app2">{children}</span>
     </div>
   );
 }
@@ -572,7 +570,7 @@ function TrackToggle({
 }): ReactElement {
   return (
     <div className="flex items-center justify-between gap-2">
-      <label className="flex items-center gap-2 text-sm text-neutral-300">
+      <label className="flex items-center gap-2 text-sm text-app2">
         <input
           type="checkbox"
           checked={checked}
@@ -585,7 +583,7 @@ function TrackToggle({
         <select
           value={deviceId ?? ''}
           onChange={(e) => onDevice(e.target.value)}
-          className="max-w-[55%] truncate rounded-md bg-neutral-800 px-2 py-1 text-xs text-neutral-200"
+          className="max-w-[55%] truncate rounded-md bg-surface2 px-2 py-1 text-xs text-app2"
         >
           <option value="">Default</option>
           {devices.map((d) => (

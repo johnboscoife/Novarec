@@ -1,5 +1,12 @@
 import type { ReactElement, ReactNode } from 'react';
-import { DEFAULT_HOTKEYS, type AppSettings, type HotkeyAction, type Theme } from '@novarec/shared';
+import {
+  DEFAULT_HOTKEYS,
+  humanizeAccelerator,
+  type AppSettings,
+  type HotkeyAction,
+  type Theme,
+} from '@novarec/shared';
+import { useAppInfo } from '../shell/useAppInfo.js';
 import { useAppSettings, useSaveAppSettings } from './useAppSettings.js';
 
 const ACTION_LABELS: Record<HotkeyAction, string> = {
@@ -15,6 +22,8 @@ const ACTION_LABELS: Record<HotkeyAction, string> = {
 export function SettingsView(): ReactElement {
   const settings = useAppSettings();
   const save = useSaveAppSettings();
+  const info = useAppInfo();
+  const platform = info.data?.platform ?? 'win32';
   const current = settings.data;
 
   function update(patch: Partial<AppSettings>): void {
@@ -22,23 +31,23 @@ export function SettingsView(): ReactElement {
   }
 
   if (!current) {
-    return <section className="p-8 text-neutral-400">Loading settings…</section>;
+    return <section className="p-8 text-muted-app">Loading settings…</section>;
   }
 
   return (
     <section className="flex h-full flex-col overflow-auto p-8">
       <header className="mb-6">
-        <p className="text-xs font-medium uppercase tracking-widest text-neutral-500">Settings</p>
+        <p className="text-xs font-medium uppercase tracking-widest text-muted-app">Settings</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Preferences</h1>
       </header>
 
       <div className="max-w-2xl space-y-6">
         <Panel title="Appearance">
-          <Row label="Theme" hint="The app is dark-first; light theme styling is in progress.">
+          <Row label="Theme" hint="Choose the app appearance.">
             <select
               value={current.theme}
               onChange={(e) => update({ theme: e.target.value as Theme })}
-              className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm text-neutral-100"
+              className="rounded-md bg-surface2 px-3 py-1.5 text-sm text-app"
             >
               <option value="system">System</option>
               <option value="dark">Dark</option>
@@ -70,7 +79,7 @@ export function SettingsView(): ReactElement {
 
         <Panel title="Storage">
           <Row label="Location" hint="Where recordings are stored.">
-            <span className="text-sm text-neutral-400">
+            <span className="text-sm text-muted-app">
               {current.storageLocation ?? 'Default (app data folder)'}
             </span>
           </Row>
@@ -80,9 +89,9 @@ export function SettingsView(): ReactElement {
           <ul className="space-y-1.5 text-sm">
             {DEFAULT_HOTKEYS.map((binding) => (
               <li key={binding.action} className="flex items-center justify-between">
-                <span className="text-neutral-300">{ACTION_LABELS[binding.action]}</span>
-                <kbd className="rounded bg-neutral-800 px-2 py-0.5 text-xs text-neutral-300">
-                  {binding.accelerator}
+                <span className="text-app2">{ACTION_LABELS[binding.action]}</span>
+                <kbd className="rounded bg-surface2 px-2 py-0.5 text-xs text-app2">
+                  {humanizeAccelerator(binding.accelerator, platform)}
                 </kbd>
               </li>
             ))}
@@ -95,8 +104,8 @@ export function SettingsView(): ReactElement {
 
 function Panel({ title, children }: { title: string; children: ReactNode }): ReactElement {
   return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+    <div className="rounded-xl border border-app bg-surface p-4">
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-app">
         {title}
       </h2>
       <div className="space-y-3">{children}</div>
@@ -116,8 +125,8 @@ function Row({
   return (
     <div className="flex items-start justify-between gap-4">
       <div className="min-w-0">
-        <div className="text-sm text-neutral-200">{label}</div>
-        {hint && <div className="mt-0.5 text-xs leading-relaxed text-neutral-500">{hint}</div>}
+        <div className="text-sm text-app2">{label}</div>
+        {hint && <div className="mt-0.5 text-xs leading-relaxed text-muted-app">{hint}</div>}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -142,7 +151,7 @@ function ToggleRow({
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
-        className={`relative h-6 w-11 rounded-full transition ${checked ? 'bg-blue-600' : 'bg-neutral-700'}`}
+        className={`relative h-6 w-11 rounded-full transition ${checked ? 'bg-blue-600' : 'bg-surface2'}`}
       >
         <span
           className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${checked ? 'left-[22px]' : 'left-0.5'}`}

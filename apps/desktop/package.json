@@ -10,6 +10,7 @@
     "build": "electron-vite build && electron-builder --win --publish never",
     "build:dir": "electron-vite build && electron-builder --dir",
     "start": "electron-vite preview",
+    "make-icon": "node scripts/make-icon.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false"
   },
   "dependencies": {
@@ -26,6 +27,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@tailwindcss/vite": "^4.3.3",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",

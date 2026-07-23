@@ -6,6 +6,7 @@ import { StudioView } from '../studio/StudioView.js';
 import { SettingsView } from '../settings/SettingsView.js';
 import { useAppSettings, useSaveAppSettings } from '../settings/useAppSettings.js';
 import { Onboarding } from './Onboarding.js';
+import { LogoWordmark } from '../../components/Logo.js';
 
 interface NavItem {
   id: ViewId;
@@ -35,16 +36,23 @@ export function AppShell(): ReactElement {
   useEffect(() => {
     const root = document.documentElement;
     const theme = settings.data?.theme ?? 'system';
-    root.dataset.theme = theme;
-    root.style.colorScheme = theme === 'system' ? 'dark light' : theme;
+    const resolved =
+      theme === 'system'
+        ? window.matchMedia('(prefers-color-scheme: light)').matches
+          ? 'light'
+          : 'dark'
+        : theme;
+    root.dataset.theme = resolved;
     root.classList.toggle('reduce-motion', settings.data?.reducedMotion ?? false);
   }, [settings.data]);
 
   return (
-    <div className="relative flex h-screen w-screen overflow-hidden bg-neutral-950 text-neutral-100">
+    <div className="relative flex h-screen w-screen overflow-hidden bg-app text-app">
       {showOnboarding && <Onboarding onStart={completeOnboarding} />}
-      <nav className="flex w-56 shrink-0 flex-col gap-1 border-r border-neutral-800 p-3">
-        <div className="mb-4 px-2 text-lg font-semibold tracking-tight">NovaRec</div>
+      <nav className="flex w-56 shrink-0 flex-col gap-1 border-r border-app p-3">
+        <div className="mb-4 px-1 py-1">
+          <LogoWordmark />
+        </div>
         {NAV.map((item) => (
           <NavButton key={item.id} item={item} active={view === item.id} onSelect={setView} />
         ))}
@@ -54,7 +62,7 @@ export function AppShell(): ReactElement {
             active={view === 'settings'}
             onSelect={setView}
           />
-          <div className="px-2 text-[11px] leading-relaxed text-neutral-600">
+          <div className="px-2 text-[11px] leading-relaxed text-dim-app">
             One capture engine · one compositor · one media pipeline
           </div>
         </div>
@@ -85,13 +93,11 @@ function NavButton({
       aria-current={active ? 'page' : undefined}
       onClick={() => onSelect(item.id)}
       className={`w-full rounded-lg px-3 py-2 text-left transition ${
-        active
-          ? 'bg-neutral-800 text-white'
-          : 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200'
+        active ? 'bg-surface2 text-app' : 'text-muted-app hover:bg-surface hover:text-app2'
       }`}
     >
       <div className="text-sm font-medium">{item.label}</div>
-      <div className="text-xs text-neutral-500">{item.hint}</div>
+      <div className="text-xs text-muted-app">{item.hint}</div>
     </button>
   );
 }

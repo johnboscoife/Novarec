@@ -25,7 +25,7 @@ export function RecordingControls({
     state === 'idle' ? 'Not recording' : state === 'paused' ? 'Paused' : 'Recording';
 
   return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
+    <div className="rounded-xl border border-app bg-surface p-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           {/* Always-visible recording indicator — cannot be disabled (security rule). */}
@@ -41,10 +41,10 @@ export function RecordingControls({
           />
           <span className="text-sm font-medium">{statusLabel}</span>
           {active && (
-            <span className="font-mono text-sm text-neutral-300">{formatElapsed(elapsedMs)}</span>
+            <span className="font-mono text-sm text-app2">{formatElapsed(elapsedMs)}</span>
           )}
           {active && (
-            <span className="text-xs text-neutral-500">
+            <span className="text-xs text-muted-app">
               {segmentCount} segment{segmentCount === 1 ? '' : 's'} saved
             </span>
           )}
@@ -56,7 +56,7 @@ export function RecordingControls({
               type="button"
               disabled={!canStart}
               onClick={onStart}
-              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition enabled:hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-neutral-800 disabled:text-neutral-500"
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition enabled:hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-surface2 disabled:text-muted-app"
             >
               Record
             </button>
@@ -66,14 +66,14 @@ export function RecordingControls({
               <button
                 type="button"
                 onClick={() => void recorder.pause()}
-                className="rounded-lg bg-neutral-800 px-4 py-2 text-sm text-neutral-200 hover:bg-neutral-700"
+                className="rounded-lg bg-surface2 px-4 py-2 text-sm text-app2 hover:bg-surface2"
               >
                 Pause
               </button>
               <button
                 type="button"
                 onClick={() => void recorder.stop()}
-                className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-900 hover:bg-white"
+                className="rounded-lg bg-surface2 px-4 py-2 text-sm font-medium text-app hover:bg-surface2"
               >
                 Stop
               </button>
@@ -91,7 +91,7 @@ export function RecordingControls({
               <button
                 type="button"
                 onClick={() => void recorder.stop()}
-                className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-900 hover:bg-white"
+                className="rounded-lg bg-surface2 px-4 py-2 text-sm font-medium text-app hover:bg-surface2"
               >
                 Stop
               </button>

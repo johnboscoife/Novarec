@@ -31,9 +31,9 @@ export function RecoveryBanner(): ReactElement | null {
         {list.map((orphan) => (
           <li
             key={orphan.dir}
-            className="flex items-center justify-between rounded-lg bg-neutral-900/50 px-3 py-2"
+            className="flex items-center justify-between rounded-lg bg-surface px-3 py-2"
           >
-            <span className="text-xs text-neutral-300">
+            <span className="text-xs text-app2">
               {new Date(orphan.createdAt).toLocaleString()} · {orphan.sealedSegmentCount} segments ·{' '}
               {(orphan.durationMs / 1000).toFixed(1)}s
             </span>
@@ -41,7 +41,7 @@ export function RecoveryBanner(): ReactElement | null {
               type="button"
               disabled={recover.isPending}
               onClick={() => recover.mutate(orphan.dir)}
-              className="rounded-md bg-amber-500 px-3 py-1.5 text-xs font-medium text-neutral-900 hover:bg-amber-400 disabled:opacity-60"
+              className="rounded-md bg-amber-500 px-3 py-1.5 text-xs font-medium text-app hover:bg-amber-400 disabled:opacity-60"
             >
               {recover.isPending ? 'Recovering…' : 'Recover'}
             </button>
