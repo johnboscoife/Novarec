@@ -23,6 +23,7 @@ import { runSustainProbe, type ProbeResult } from './probe.js';
 import { useRecorder } from './useRecorder.js';
 import { RecordingControls } from './RecordingControls.js';
 import { RecoveryBanner } from './RecoveryBanner.js';
+import { CameraPreview } from './CameraPreview.js';
 import { useAppSettings } from '../settings/useAppSettings.js';
 
 const VERDICT_STYLE: Record<SustainVerdict, { label: string; className: string }> = {
@@ -320,147 +321,149 @@ export function RecordView(): ReactElement {
         </div>
       )}
 
-      <div className="grid flex-1 grid-cols-[1.3fr_1fr] gap-6 overflow-hidden">
-        {/* Sources */}
-        <div className="flex flex-col gap-4 overflow-auto pr-1">
-          <SourceGroup title={`Screens (${screens.length})`} loading={sources.isLoading}>
-            {screens.map((s) => {
-              const d = displays.data?.find((x) => x.id === s.displayId);
-              return (
-                <SourceRow
-                  key={s.id}
-                  label={s.name}
-                  detail={
-                    d
-                      ? `${d.bounds.width}×${d.bounds.height} · ${d.scaleFactor}× DPI${d.primary ? ' · primary' : ''}`
-                      : undefined
-                  }
-                  selected={selectedSourceId === s.id}
-                  onSelect={() => setSelectedSourceId(s.id)}
-                />
-              );
-            })}
-          </SourceGroup>
-
-          <SourceGroup title={`Windows (${windows.length})`} loading={sources.isLoading}>
-            {windows.slice(0, 40).map((w) => (
-              <SourceRow
-                key={w.id}
-                label={w.name || 'Untitled window'}
-                selected={selectedSourceId === w.id}
-                onSelect={() => setSelectedSourceId(w.id)}
-              />
-            ))}
-          </SourceGroup>
-
-          <SourceGroup title={`Devices (${devices.data?.length ?? 0})`} loading={devices.isLoading}>
-            {(devices.data ?? []).map((d) => (
-              <SourceRow
-                key={d.id}
-                label={d.label}
-                detail={d.kind}
-                onSelect={() => undefined}
-                selected={false}
-                muted
-              />
-            ))}
-          </SourceGroup>
-        </div>
-
-        {/* Settings */}
-        <div className="flex flex-col gap-5 overflow-auto">
-          <Panel title="Frame rate">
-            <div className="flex gap-2">
-              {SUPPORTED_TARGET_FPS.map((fps) => (
-                <button
-                  key={fps}
-                  type="button"
-                  onClick={() => chooseFps(fps)}
-                  className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
-                    targetFps === fps
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-surface2 text-app2 hover:bg-surface2'
-                  }`}
-                >
-                  {fps}
-                </button>
-              ))}
-            </div>
-          </Panel>
-
-          <Panel title="Region">
-            {region ? (
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-app2">
-                  {Math.round(region.rect.width)} × {Math.round(region.rect.height)}
-                  <span className="ml-2 text-xs text-muted-app">
-                    at ({Math.round(region.rect.x)}, {Math.round(region.rect.y)})
-                    {region.displayId === null ? ' · spans monitors' : ''}
-                  </span>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={selectRegion}
-                    className="rounded-md bg-surface2 px-3 py-1.5 text-xs text-app2 hover:bg-surface2"
-                  >
-                    Re-select
-                  </button>
-                  <button
-                    type="button"
-                    onClick={clearRegion}
-                    className="rounded-md bg-surface2 px-3 py-1.5 text-xs text-muted-app hover:bg-surface2"
-                  >
-                    Clear
-                  </button>
-                </div>
-              </div>
-            ) : (
+      <div className="grid flex-1 gap-4 overflow-auto lg:grid-cols-[1.5fr_1fr]">
+        {/* Capture setup — one compact card */}
+        <div className="rounded-2xl border border-app bg-surface p-5">
+          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-app">
+            What to capture
+          </label>
+          <div className="flex gap-2">
+            <select
+              value={selectedSourceId ?? ''}
+              onChange={(e) => setSelectedSourceId(e.target.value || null)}
+              className="min-w-0 flex-1 rounded-lg bg-surface2 px-3 py-2.5 text-sm text-app"
+            >
+              <option value="">Select a screen or window…</option>
+              {screens.length > 0 && (
+                <optgroup label="Screens">
+                  {screens.map((s) => {
+                    const d = displays.data?.find((x) => x.id === s.displayId);
+                    return (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                        {d
+                          ? ` — ${d.bounds.width}×${d.bounds.height}${d.primary ? ' · primary' : ''}`
+                          : ''}
+                      </option>
+                    );
+                  })}
+                </optgroup>
+              )}
+              {windows.length > 0 && (
+                <optgroup label="Windows">
+                  {windows.slice(0, 60).map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name || 'Untitled window'}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+            <button
+              type="button"
+              onClick={region ? clearRegion : selectRegion}
+              className={`shrink-0 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
+                region
+                  ? 'bg-blue-600/20 text-blue-300 ring-1 ring-inset ring-blue-500/40'
+                  : 'bg-surface2 text-app2 hover:bg-surface2'
+              }`}
+            >
+              {region ? 'Region ✓' : 'Region…'}
+            </button>
+          </div>
+          {region && (
+            <p className="mt-2 text-xs text-muted-app">
+              {Math.round(region.rect.width)}×{Math.round(region.rect.height)} at (
+              {Math.round(region.rect.x)}, {Math.round(region.rect.y)})
+              {region.displayId === null ? ' · spans monitors' : ''} ·{' '}
               <button
                 type="button"
                 onClick={selectRegion}
-                className="w-full rounded-lg bg-surface2 px-3 py-2 text-sm text-app2 hover:bg-surface2"
+                className="text-blue-300 hover:underline"
               >
-                Select a region…
+                re-select
               </button>
-            )}
-          </Panel>
-
-          <Panel title="Tracks">
-            <div className="space-y-2">
-              <TrackToggle
-                label="Camera"
-                checked={cameraOn}
-                onToggle={toggleCamera}
-                devices={videoDevices}
-                deviceId={cameraDeviceId}
-                onDevice={setCameraDeviceId}
-              />
-              <TrackToggle
-                label="Microphone"
-                checked={micOn}
-                onToggle={toggleMic}
-                devices={audioDevices}
-                deviceId={micDeviceId}
-                onDevice={setMicDeviceId}
-              />
-              <label className="flex items-center gap-2 text-sm text-app2">
-                <input
-                  type="checkbox"
-                  checked={systemAudioOn}
-                  onChange={(e) => setSystemAudioOn(e.target.checked)}
-                  className="accent-blue-500"
-                />
-                System audio <span className="text-xs text-muted-app">(Windows)</span>
-              </label>
-            </div>
-            <p className="mt-2 text-xs text-muted-app">
-              Screen comes from the selected source. Each track is saved separately and stays in
-              sync.
             </p>
-          </Panel>
+          )}
 
-          <Panel title="Capacity check">
+          <label className="mb-1.5 mt-5 block text-xs font-semibold uppercase tracking-wider text-muted-app">
+            Also include
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <TrackChip label="Camera" active={cameraOn} onClick={() => toggleCamera(!cameraOn)} />
+            <TrackChip label="Microphone" active={micOn} onClick={() => toggleMic(!micOn)} />
+            <TrackChip
+              label="System audio"
+              hint="Windows"
+              active={systemAudioOn}
+              onClick={() => setSystemAudioOn(!systemAudioOn)}
+            />
+          </div>
+          {(cameraOn || micOn) && (
+            <div className="mt-3 space-y-2">
+              {cameraOn && (
+                <DeviceSelect
+                  label="Camera"
+                  devices={videoDevices}
+                  value={cameraDeviceId}
+                  onChange={setCameraDeviceId}
+                />
+              )}
+              {micOn && (
+                <DeviceSelect
+                  label="Microphone"
+                  devices={audioDevices}
+                  value={micDeviceId}
+                  onChange={setMicDeviceId}
+                />
+              )}
+            </div>
+          )}
+
+          <label className="mb-1.5 mt-5 block text-xs font-semibold uppercase tracking-wider text-muted-app">
+            Frame rate
+          </label>
+          <div className="flex gap-2">
+            {SUPPORTED_TARGET_FPS.map((fps) => (
+              <button
+                key={fps}
+                type="button"
+                onClick={() => chooseFps(fps)}
+                className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                  targetFps === fps
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-surface2 text-app2 hover:bg-surface2'
+                }`}
+              >
+                {fps}
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-muted-app">
+            Each track is saved separately and stays in sync until you export.
+          </p>
+        </div>
+
+        {/* Camera preview + capacity check */}
+        <div className="space-y-4">
+          {/* Release the camera before recording acquires it (countdown → null
+              flips this off), so the recorder never hits a device-busy camera. */}
+          <CameraPreview
+            active={cameraOn && recorder.state === 'idle' && countdown === null}
+            deviceId={cameraDeviceId}
+          />
+
+          <div className="rounded-2xl border border-app bg-surface p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-app">
+                Capacity check
+              </h2>
+              {probe && (
+                <span className={VERDICT_STYLE[sustainVerdict(probe.metrics, targetFps)].className}>
+                  {VERDICT_STYLE[sustainVerdict(probe.metrics, targetFps)].label}
+                </span>
+              )}
+            </div>
             <button
               type="button"
               disabled={!selectedSourceId || probing}
@@ -471,38 +474,41 @@ export function RecordView(): ReactElement {
                 ? 'Probing (3s)…'
                 : selectedSourceId
                   ? `Test ${targetFps} fps on this source`
-                  : 'Select a screen or window first'}
+                  : 'Select a source first'}
             </button>
-
-            <p className="mt-2 text-xs text-muted-app">
-              Animates the screen for 3s to measure true capacity — screen capture only produces
-              frames when the picture changes, so a still screen isn&apos;t a real result.
-            </p>
 
             {probeError && <p className="mt-3 text-sm text-red-400">{probeError}</p>}
 
             {probe && (
               <div className="mt-4 space-y-1 text-sm">
-                <Metric label="Verdict">
-                  <span
-                    className={VERDICT_STYLE[sustainVerdict(probe.metrics, targetFps)].className}
-                  >
-                    {VERDICT_STYLE[sustainVerdict(probe.metrics, targetFps)].label}
-                  </span>
-                </Metric>
                 <Metric label="Delivered">{probe.metrics.deliveredFps.toFixed(1)} fps</Metric>
                 <Metric label="Dropped">{(probe.metrics.droppedRatio * 100).toFixed(1)}%</Metric>
                 <Metric label="Jitter">{probe.metrics.jitterMs.toFixed(1)} ms</Metric>
-                <Metric label="This machine can sustain">
+                <Metric label="Can sustain">
                   <span className="font-semibold text-app">
                     {probe.maxSustainableFps > 0
                       ? `${probe.maxSustainableFps} fps`
                       : 'Below 24 fps'}
                   </span>
                 </Metric>
+
+                {probe.maxSustainableFps > 0 && probe.maxSustainableFps < targetFps && (
+                  <button
+                    type="button"
+                    onClick={() => chooseFps(probe.maxSustainableFps as TargetFps)}
+                    className="mt-2 w-full rounded-lg bg-blue-600/15 px-3 py-2 text-sm font-medium text-blue-300 ring-1 ring-inset ring-blue-500/40 transition hover:bg-blue-600/25"
+                  >
+                    Switch to {probe.maxSustainableFps} fps for a smooth capture
+                  </button>
+                )}
               </div>
             )}
-          </Panel>
+
+            <p className="mt-3 text-xs text-muted-app">
+              Animates the screen for 3s to measure true capacity — a still screen isn&apos;t a real
+              result.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -516,68 +522,6 @@ export function RecordView(): ReactElement {
   );
 }
 
-function SourceGroup({
-  title,
-  loading,
-  children,
-}: {
-  title: string;
-  loading: boolean;
-  children: ReactNode;
-}): ReactElement {
-  return (
-    <div>
-      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-app">
-        {title}
-      </h2>
-      {loading ? (
-        <p className="text-sm text-dim-app">Enumerating…</p>
-      ) : (
-        <div className="space-y-1.5">{children}</div>
-      )}
-    </div>
-  );
-}
-
-function SourceRow({
-  label,
-  detail,
-  selected,
-  onSelect,
-  muted = false,
-}: {
-  label: string;
-  detail?: string | undefined;
-  selected: boolean;
-  onSelect: () => void;
-  muted?: boolean;
-}): ReactElement {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      disabled={muted}
-      className={`w-full rounded-lg border px-3 py-2 text-left transition ${
-        selected ? 'border-blue-500 bg-blue-500/10' : 'border-app bg-surface hover:border-app'
-      } ${muted ? 'cursor-default opacity-70' : ''}`}
-    >
-      <div className="truncate text-sm text-app2">{label}</div>
-      {detail && <div className="truncate text-xs text-muted-app">{detail}</div>}
-    </button>
-  );
-}
-
-function Panel({ title, children }: { title: string; children: ReactNode }): ReactElement {
-  return (
-    <div className="rounded-xl border border-app bg-surface p-4">
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-app">
-        {title}
-      </h2>
-      {children}
-    </div>
-  );
-}
-
 function Metric({ label, children }: { label: string; children: ReactNode }): ReactElement {
   return (
     <div className="flex items-center justify-between">
@@ -587,46 +531,63 @@ function Metric({ label, children }: { label: string; children: ReactNode }): Re
   );
 }
 
-function TrackToggle({
+function TrackChip({
   label,
-  checked,
-  onToggle,
-  devices,
-  deviceId,
-  onDevice,
+  hint,
+  active,
+  onClick,
 }: {
   label: string;
-  checked: boolean;
-  onToggle: (value: boolean) => void;
-  devices: CaptureSource[];
-  deviceId: string | null;
-  onDevice: (id: string) => void;
+  hint?: string | undefined;
+  active: boolean;
+  onClick: () => void;
 }): ReactElement {
   return (
-    <div className="flex items-center justify-between gap-2">
-      <label className="flex items-center gap-2 text-sm text-app2">
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={(e) => onToggle(e.target.checked)}
-          className="accent-blue-500"
-        />
-        {label}
-      </label>
-      {checked && devices.length > 0 && (
-        <select
-          value={deviceId ?? ''}
-          onChange={(e) => onDevice(e.target.value)}
-          className="max-w-[55%] truncate rounded-md bg-surface2 px-2 py-1 text-xs text-app2"
-        >
-          <option value="">Default</option>
-          {devices.map((d) => (
-            <option key={d.id} value={d.deviceId ?? d.id}>
-              {d.label}
-            </option>
-          ))}
-        </select>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={active}
+      onClick={onClick}
+      className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+        active ? 'bg-blue-600 text-white' : 'bg-surface2 text-app2 hover:bg-surface2'
+      }`}
+    >
+      {label}
+      {hint && (
+        <span className={`ml-1.5 text-xs ${active ? 'text-blue-100' : 'text-muted-app'}`}>
+          ({hint})
+        </span>
       )}
-    </div>
+    </button>
+  );
+}
+
+function DeviceSelect({
+  label,
+  devices,
+  value,
+  onChange,
+}: {
+  label: string;
+  devices: CaptureSource[];
+  value: string | null;
+  onChange: (id: string) => void;
+}): ReactElement {
+  return (
+    <label className="flex items-center gap-2 text-xs text-muted-app">
+      <span className="w-20 shrink-0">{label}</span>
+      <select
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value)}
+        className="min-w-0 flex-1 truncate rounded-md bg-surface2 px-2 py-1.5 text-xs text-app2"
+      >
+        <option value="">Default device</option>
+        {devices.map((d) => (
+          <option key={d.id} value={d.deviceId ?? d.id}>
+            {d.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
