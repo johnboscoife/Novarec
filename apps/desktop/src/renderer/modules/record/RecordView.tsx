@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { sustainVerdict, type SustainVerdict } from '@novarec/capture';
 import {
-  EXPORT_PRESETS,
   SUPPORTED_TARGET_FPS,
   countdownSequence,
   type CaptureSource,
@@ -25,6 +24,7 @@ import { RecordingControls } from './RecordingControls.js';
 import { RecoveryBanner } from './RecoveryBanner.js';
 import { CameraPreview } from './CameraPreview.js';
 import { useAppSettings } from '../settings/useAppSettings.js';
+import { useExportStore } from '../../exportStore.js';
 
 const VERDICT_STYLE: Record<SustainVerdict, { label: string; className: string }> = {
   sustained: { label: 'Sustained', className: 'text-emerald-400' },
@@ -53,10 +53,9 @@ export function RecordView(): ReactElement {
   const [cameraDeviceId, setCameraDeviceId] = useState<string | null>(null);
   const [micDeviceId, setMicDeviceId] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
-  const [exportedPath, setExportedPath] = useState<string | null>(null);
-  const [exportProgress, setExportProgress] = useState<number | null>(null);
+
+  // Export is an app-wide background job (keeps running across view switches).
+  const exportJob = useExportStore();
 
   // Seed local state from persisted settings once loaded.
   useEffect(() => {
@@ -206,41 +205,29 @@ export function RecordView(): ReactElement {
     }, 1000);
   }
 
-  async function exportLastRecording(): Promise<void> {
-    const dir = recorder.lastRecordingDir;
-    const youtube = EXPORT_PRESETS.find((p) => p.id === 'youtube');
-    if (!dir || !youtube) return;
-    setExporting(true);
-    setExportError(null);
-    setExportedPath(null);
-    setExportProgress(0);
-    const off = window.novarec.onExportProgress(({ elapsedMs, totalMs }) => {
-      setExportProgress(totalMs > 0 ? Math.min(1, elapsedMs / totalMs) : 0);
-    });
-    try {
-      const { outputPath } = await window.novarec.runExport({
-        recordingDir: dir,
-        settings: youtube.settings,
-      });
-      setExportedPath(outputPath);
-      await window.novarec.revealPath({ path: outputPath });
-    } catch (err) {
-      setExportError(err instanceof Error ? err.message : 'Export failed');
-    } finally {
-      off();
-      setExporting(false);
-      setExportProgress(null);
-    }
+  function exportLastRecording(): void {
+    if (recorder.lastRecordingDir) exportJob.start(recorder.lastRecordingDir);
   }
+
+  // View-scoped mirror of the app-wide export job for the "Last recording" card.
+  const jobForThis = exportJob.dir === recorder.lastRecordingDir ? exportJob : null;
+  const exporting = jobForThis?.status === 'running';
+  const exportProgress = exporting ? jobForThis.progress : null;
+  const exportedPath = jobForThis?.status === 'done' ? jobForThis.outputPath : null;
+  const exportError = jobForThis?.status === 'error' ? jobForThis.error : null;
 
   // Auto-export when a recording stops, if enabled in Settings. A ref holds the
   // latest closure so the effect can depend only on the stop transition, and
   // `autoExportedDir` guards against exporting the same recording twice.
   const maybeAutoExport = useRef<(dir: string) => void>(() => undefined);
   maybeAutoExport.current = (dir) => {
-    if (appSettings.data?.autoExportOnStop && autoExportedDir.current !== dir && !exporting) {
+    if (
+      appSettings.data?.autoExportOnStop &&
+      autoExportedDir.current !== dir &&
+      exportJob.status !== 'running'
+    ) {
       autoExportedDir.current = dir;
-      void exportLastRecording();
+      exportJob.start(dir);
     }
   };
   useEffect(() => {

@@ -127,10 +127,45 @@ function GoogleAccountPanel({
     <Panel title="Google account (Meet)">
       <p className="text-xs leading-relaxed text-muted-app">
         To sign in with Google inside NovaRec, create an OAuth <strong>Desktop app</strong> client
-        in Google Cloud (APIs &amp; Services → Credentials), enable the{' '}
-        <strong>Google Meet API</strong>, and paste the client ID and secret here. A desktop client
-        secret isn&apos;t confidential. Then sign in from the Meet section.
+        in Google Cloud, enable the <strong>Google Meet API</strong>, and paste the client ID and
+        secret here. A desktop client secret isn&apos;t confidential. Then sign in from the Meet
+        section.
       </p>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        <button
+          type="button"
+          onClick={() =>
+            void window.novarec.openExternal({
+              url: 'https://console.cloud.google.com/apis/credentials',
+            })
+          }
+          className="text-blue-400 hover:underline"
+        >
+          Open Credentials page →
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            void window.novarec.openExternal({
+              url: 'https://console.cloud.google.com/apis/library/meet.googleapis.com',
+            })
+          }
+          className="text-blue-400 hover:underline"
+        >
+          Enable Meet API →
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            void window.novarec.openExternal({
+              url: 'https://console.cloud.google.com/auth/overview',
+            })
+          }
+          className="text-blue-400 hover:underline"
+        >
+          OAuth consent screen →
+        </button>
+      </div>
       <div className="mt-3 space-y-3">
         <label className="block">
           <span className="mb-1 block text-sm text-app2">Client ID</span>

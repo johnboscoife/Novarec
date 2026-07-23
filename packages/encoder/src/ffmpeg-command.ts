@@ -20,12 +20,42 @@ export interface FfmpegInput {
 const PIP_WIDTH = 320;
 const PIP_MARGIN = 24;
 
-const VIDEO_ENCODERS: Record<Exclude<VideoCodec, 'none'>, { sw: string; hw: string }> = {
-  h264: { sw: 'libx264', hw: 'h264_nvenc' },
-  hevc: { sw: 'libx265', hw: 'hevc_nvenc' },
-  av1: { sw: 'libaom-av1', hw: 'av1_nvenc' },
-  vp9: { sw: 'libvpx-vp9', hw: 'libvpx-vp9' },
+// Per codec: the software encoder and an ordered list of hardware encoders to
+// try (NVIDIA → Intel QuickSync → AMD). The export runner walks the candidate
+// list until one succeeds, so a machine without NVENC still gets fast QSV/AMF
+// encoding, and everything ultimately falls back to the always-present software
+// encoder.
+const VIDEO_ENCODERS: Record<Exclude<VideoCodec, 'none'>, { sw: string; hw: string[] }> = {
+  h264: { sw: 'libx264', hw: ['h264_nvenc', 'h264_qsv', 'h264_amf'] },
+  hevc: { sw: 'libx265', hw: ['hevc_nvenc', 'hevc_qsv', 'hevc_amf'] },
+  av1: { sw: 'libaom-av1', hw: ['av1_nvenc', 'av1_qsv'] },
+  vp9: { sw: 'libvpx-vp9', hw: ['vp9_qsv'] },
 };
+
+function isSoftwareEncoder(encoder: string): boolean {
+  return encoder.startsWith('lib');
+}
+
+/** Ordered list of concrete video encoders the runner should try, best first. */
+export function videoEncoderCandidates(settings: ExportSettings): string[] {
+  if (settings.videoCodec === 'none') return [];
+  const entry = VIDEO_ENCODERS[settings.videoCodec];
+  return settings.hardwareEncode ? [...entry.hw, entry.sw] : [entry.sw];
+}
+
+function resolveVideoEncoder(settings: ExportSettings, override: string | undefined): string {
+  if (override) return override;
+  const entry = VIDEO_ENCODERS[settings.videoCodec as Exclude<VideoCodec, 'none'>];
+  return settings.hardwareEncode ? entry.hw[0]! : entry.sw;
+}
+
+/** Speed preset per encoder family — the big lever for fast software exports. */
+function presetArgs(encoder: string): string[] {
+  if (encoder === 'libx264' || encoder === 'libx265') return ['-preset', 'veryfast'];
+  if (encoder.endsWith('_qsv')) return ['-preset', 'veryfast'];
+  if (encoder.endsWith('_nvenc')) return ['-preset', 'p4'];
+  return [];
+}
 
 const AUDIO_ENCODERS: Record<Exclude<AudioCodec, 'none'>, string> = {
   aac: 'aac',
@@ -39,8 +69,16 @@ function scaleFilter(width: number | null, height: number | null): string | null
   return `scale=${width ?? -2}:${height ?? -2}`;
 }
 
-function rateControlArgs(rc: RateControl, hardware: boolean): string[] {
-  if (rc.mode === 'crf') return hardware ? ['-cq:v', String(rc.crf)] : ['-crf', String(rc.crf)];
+/** Rate-control flags for a specific encoder (CRF-style flags differ per family). */
+function rateControlArgs(rc: RateControl, encoder: string): string[] {
+  if (rc.mode === 'crf') {
+    if (isSoftwareEncoder(encoder)) return ['-crf', String(rc.crf)];
+    if (encoder.endsWith('_qsv')) return ['-global_quality', String(rc.crf)];
+    if (encoder.endsWith('_amf')) {
+      return ['-rc', 'cqp', '-qp_i', String(rc.crf), '-qp_p', String(rc.crf)];
+    }
+    return ['-cq:v', String(rc.crf)]; // nvenc + sensible default
+  }
   if (rc.mode === 'cbr') {
     const rate = `${rc.bitrateKbps}k`;
     return ['-b:v', rate, '-maxrate', rate, '-bufsize', `${rc.bitrateKbps * 2}k`];
@@ -52,6 +90,7 @@ export function buildFfmpegArgs(
   settings: ExportSettings,
   inputs: readonly FfmpegInput[],
   outputPath: string,
+  videoEncoder?: string,
 ): string[] {
   // Composite (camera PiP + audio mix) only when it's actually needed — a
   // camera to overlay, or more than one audio track to blend. Screen-only and
@@ -61,7 +100,7 @@ export function buildFfmpegArgs(
   const audios = inputs.filter((i) => i.role === 'audio').length;
   const needsComposite =
     settings.container !== 'gif' && ((cameras > 0 && settings.videoCodec !== 'none') || audios > 1);
-  if (needsComposite) return buildCompositeArgs(settings, inputs, outputPath);
+  if (needsComposite) return buildCompositeArgs(settings, inputs, outputPath, videoEncoder);
 
   const args: string[] = ['-y'];
   for (const input of inputs) args.push('-i', input.path);
@@ -80,31 +119,19 @@ export function buildFfmpegArgs(
   if (settings.videoCodec === 'none') {
     args.push('-vn');
   } else {
-    const encoder = VIDEO_ENCODERS[settings.videoCodec];
-    args.push('-c:v', settings.hardwareEncode ? encoder.hw : encoder.sw);
-    args.push(...rateControlArgs(settings.rateControl, settings.hardwareEncode));
-    if (settings.fps) args.push('-r', String(settings.fps));
+    args.push(...videoCodecArgs(settings, resolveVideoEncoder(settings, videoEncoder)));
     if (scale) args.push('-vf', scale);
   }
 
-  if (settings.audioCodec === 'none') {
-    args.push('-an');
-  } else {
-    args.push('-c:a', AUDIO_ENCODERS[settings.audioCodec]);
-    if (settings.rateControl.mode !== 'crf' && settings.audioCodec !== 'flac') {
-      args.push('-b:a', `${settings.rateControl.bitrateKbps}k`);
-    }
-  }
-
+  args.push(...audioCodecArgs(settings));
   args.push(outputPath);
   return args;
 }
 
-function videoCodecArgs(settings: ExportSettings): string[] {
-  if (settings.videoCodec === 'none') return ['-vn'];
-  const encoder = VIDEO_ENCODERS[settings.videoCodec];
-  const out = ['-c:v', settings.hardwareEncode ? encoder.hw : encoder.sw];
-  out.push(...rateControlArgs(settings.rateControl, settings.hardwareEncode));
+function videoCodecArgs(settings: ExportSettings, encoder: string): string[] {
+  const out = ['-c:v', encoder];
+  out.push(...presetArgs(encoder));
+  out.push(...rateControlArgs(settings.rateControl, encoder));
   if (settings.fps) out.push('-r', String(settings.fps));
   return out;
 }
@@ -128,6 +155,7 @@ function buildCompositeArgs(
   settings: ExportSettings,
   inputs: readonly FfmpegInput[],
   outputPath: string,
+  videoEncoder?: string,
 ): string[] {
   const args: string[] = ['-y'];
   for (const input of inputs) args.push('-i', input.path);
@@ -176,7 +204,11 @@ function buildCompositeArgs(
   if (videoMap) args.push('-map', videoMap);
   if (audioMap) args.push('-map', audioMap);
 
-  args.push(...(wantVideo ? videoCodecArgs(settings) : ['-vn']));
+  args.push(
+    ...(wantVideo
+      ? videoCodecArgs(settings, resolveVideoEncoder(settings, videoEncoder))
+      : ['-vn']),
+  );
   args.push(...(wantAudio ? audioCodecArgs(settings) : ['-an']));
 
   args.push(outputPath);

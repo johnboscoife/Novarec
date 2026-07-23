@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { EXPORT_PRESETS, type ExportSettings } from '@novarec/shared';
-import { buildFfmpegArgs } from './ffmpeg-command.js';
+import { buildFfmpegArgs, videoEncoderCandidates } from './ffmpeg-command.js';
 import { nextRunnable, queueReducer, type ExportJob } from './export-queue.js';
 
 function preset(id: string): ExportSettings {
@@ -106,6 +106,31 @@ describe('buildFfmpegArgs', () => {
     expect(args).toContain('[vout]');
     expect(args).toContain('2:a'); // mic mapped as the audio stream
     expect(flagValue(args, '-c:v')).toBe('h264_nvenc');
+  });
+
+  it('offers a hardware→software encoder chain, software first when hw is off', () => {
+    expect(videoEncoderCandidates(preset('youtube'))).toEqual([
+      'h264_nvenc',
+      'h264_qsv',
+      'h264_amf',
+      'libx264',
+    ]);
+    expect(videoEncoderCandidates({ ...preset('youtube'), hardwareEncode: false })).toEqual([
+      'libx264',
+    ]);
+  });
+
+  it('adds a fast preset for software x264 exports', () => {
+    const args = buildFfmpegArgs({ ...preset('youtube'), hardwareEncode: false }, inputs, 'o.mp4');
+    expect(flagValue(args, '-preset')).toBe('veryfast');
+    expect(flagValue(args, '-c:v')).toBe('libx264');
+  });
+
+  it('uses per-encoder rate control when a specific encoder is chosen (QSV)', () => {
+    const args = buildFfmpegArgs(preset('youtube'), inputs, 'o.mp4', 'h264_qsv');
+    expect(flagValue(args, '-c:v')).toBe('h264_qsv');
+    expect(flagValue(args, '-global_quality')).toBe('18');
+    expect(args).not.toContain('-cq:v');
   });
 
   it('mixes multiple audio tracks with amix', () => {

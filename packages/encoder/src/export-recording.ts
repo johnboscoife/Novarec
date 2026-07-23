@@ -1,5 +1,5 @@
 import type { ExportSettings } from '@novarec/shared';
-import { buildFfmpegArgs, type FfmpegInput } from './ffmpeg-command.js';
+import { buildFfmpegArgs, videoEncoderCandidates, type FfmpegInput } from './ffmpeg-command.js';
 import { runFfmpeg } from './ffmpeg-runner.js';
 
 /**
@@ -24,22 +24,25 @@ export async function exportRecording(options: ExportRecordingOptions): Promise<
     ...(options.signal ? { signal: options.signal } : {}),
   };
 
-  try {
-    await runFfmpeg(
-      options.ffmpegPath,
-      buildFfmpegArgs(options.settings, inputs, options.outputPath),
-      runOpts,
-    );
-  } catch (error) {
-    // Automatic software fallback: hardware encoders (e.g. h264_nvenc) aren't
-    // present on every machine or in every FFmpeg build.
-    if (!options.settings.hardwareEncode) throw error;
-    const software = { ...options.settings, hardwareEncode: false };
-    await runFfmpeg(
-      options.ffmpegPath,
-      buildFfmpegArgs(software, inputs, options.outputPath),
-      runOpts,
-    );
+  // Walk the encoder candidates best-first (hardware → software). A machine
+  // without a given hardware encoder (or an FFmpeg build lacking it) fails fast
+  // on init and we drop to the next candidate; software always works. `undefined`
+  // means "no video encode" (audio-only / GIF) — a single attempt.
+  const candidates = videoEncoderCandidates(options.settings);
+  const attempts: (string | undefined)[] = candidates.length > 0 ? candidates : [undefined];
+
+  for (let i = 0; i < attempts.length; i += 1) {
+    try {
+      await runFfmpeg(
+        options.ffmpegPath,
+        buildFfmpegArgs(options.settings, inputs, options.outputPath, attempts[i]),
+        runOpts,
+      );
+      return options.outputPath;
+    } catch (error) {
+      if (options.signal?.aborted || i === attempts.length - 1) throw error;
+      // else: try the next (slower but more compatible) encoder.
+    }
   }
   return options.outputPath;
 }

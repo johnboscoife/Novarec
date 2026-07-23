@@ -7,6 +7,7 @@ import { SettingsView } from '../settings/SettingsView.js';
 import { useAppSettings, useSaveAppSettings } from '../settings/useAppSettings.js';
 import { Onboarding } from './Onboarding.js';
 import { LogoWordmark } from '../../components/Logo.js';
+import { useExportStore } from '../../exportStore.js';
 
 interface NavItem {
   id: ViewId;
@@ -57,6 +58,7 @@ export function AppShell(): ReactElement {
           <NavButton key={item.id} item={item} active={view === item.id} onSelect={setView} />
         ))}
         <div className="mt-auto space-y-2">
+          <ExportIndicator />
           <NavButton
             item={{ id: 'settings', label: 'Settings', hint: 'Preferences & privacy' }}
             active={view === 'settings'}
@@ -74,6 +76,56 @@ export function AppShell(): ReactElement {
         {view === 'studio' && <StudioView />}
         {view === 'settings' && <SettingsView />}
       </main>
+    </div>
+  );
+}
+
+function ExportIndicator(): ReactElement | null {
+  const status = useExportStore((s) => s.status);
+  const progress = useExportStore((s) => s.progress);
+  const outputPath = useExportStore((s) => s.outputPath);
+  const reset = useExportStore((s) => s.reset);
+
+  if (status === 'idle') return null;
+
+  return (
+    <div className="rounded-lg border border-app bg-surface px-3 py-2 text-xs">
+      {status === 'running' && (
+        <>
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="font-medium text-app2">Exporting…</span>
+            <span className="text-muted-app">{Math.round(progress * 100)}%</span>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface2">
+            <div
+              className="h-full bg-blue-500 transition-[width]"
+              style={{ width: `${Math.round(progress * 100)}%` }}
+            />
+          </div>
+        </>
+      )}
+      {status === 'done' && (
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => outputPath && void window.novarec.revealPath({ path: outputPath })}
+            className="truncate text-left font-medium text-emerald-400 hover:underline"
+          >
+            Export ready ✓
+          </button>
+          <button type="button" onClick={reset} className="shrink-0 text-muted-app hover:text-app2">
+            ✕
+          </button>
+        </div>
+      )}
+      {status === 'error' && (
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate text-red-400">Export failed</span>
+          <button type="button" onClick={reset} className="shrink-0 text-muted-app hover:text-app2">
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   );
 }
