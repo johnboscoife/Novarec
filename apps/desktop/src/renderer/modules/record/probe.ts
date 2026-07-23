@@ -46,11 +46,16 @@ export async function runSustainProbe(
   durationMs = 3000,
 ): Promise<ProbeResult> {
   await window.novarec.setCaptureSource({ sourceId, audio: false });
+  // Drive motion on the *captured* display (may differ from NovaRec's own), so a
+  // secondary screen isn't measured as static. Harmless for window sources.
+  await window.novarec.setProbeMotion({ on: true, sourceId }).catch(() => undefined);
   const stream = await navigator.mediaDevices.getDisplayMedia({
     video: { frameRate: targetFps },
     audio: false,
   });
 
+  // Also animate inside our own window — covers the case of capturing NovaRec
+  // itself (a window source), which the display overlay can't reach.
   const stopMotion = startMotionDriver();
   try {
     const timestamps = await collectFrameTimestamps(stream, durationMs);
@@ -61,6 +66,7 @@ export async function runSustainProbe(
     };
   } finally {
     stopMotion();
+    await window.novarec.setProbeMotion({ on: false, sourceId: null }).catch(() => undefined);
     stream.getTracks().forEach((t) => t.stop());
   }
 }

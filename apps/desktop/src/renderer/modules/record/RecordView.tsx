@@ -23,6 +23,7 @@ import { runSustainProbe, type ProbeResult } from './probe.js';
 import { useRecorder } from './useRecorder.js';
 import { RecordingControls } from './RecordingControls.js';
 import { RecoveryBanner } from './RecoveryBanner.js';
+import { useAppSettings } from '../settings/useAppSettings.js';
 
 const VERDICT_STYLE: Record<SustainVerdict, { label: string; className: string }> = {
   sustained: { label: 'Sustained', className: 'text-emerald-400' },
@@ -106,6 +107,8 @@ export function RecordView(): ReactElement {
 
   const recorder = useRecorder();
   const info = useAppInfo();
+  const appSettings = useAppSettings();
+  const autoExportedDir = useRef<string | null>(null);
   const screens = sources.data?.screens ?? [];
   const windows = sources.data?.windows ?? [];
   const videoDevices = (devices.data ?? []).filter((d) => d.kind === 'camera');
@@ -220,6 +223,22 @@ export function RecordView(): ReactElement {
       setExportProgress(null);
     }
   }
+
+  // Auto-export when a recording stops, if enabled in Settings. A ref holds the
+  // latest closure so the effect can depend only on the stop transition, and
+  // `autoExportedDir` guards against exporting the same recording twice.
+  const maybeAutoExport = useRef<(dir: string) => void>(() => undefined);
+  maybeAutoExport.current = (dir) => {
+    if (appSettings.data?.autoExportOnStop && autoExportedDir.current !== dir && !exporting) {
+      autoExportedDir.current = dir;
+      void exportLastRecording();
+    }
+  };
+  useEffect(() => {
+    if (recorder.state === 'idle' && recorder.lastRecordingDir) {
+      maybeAutoExport.current(recorder.lastRecordingDir);
+    }
+  }, [recorder.state, recorder.lastRecordingDir]);
 
   // Global hotkeys drive the recording lifecycle even when the app is unfocused.
   const hotkeyHandler = useRef<(action: HotkeyAction) => void>(() => undefined);

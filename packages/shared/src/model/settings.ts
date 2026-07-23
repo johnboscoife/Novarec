@@ -12,6 +12,10 @@ export const AppSettingsSchema = z.object({
   storageLocation: z.string().nullable(),
   storageQuotaGb: z.number().positive().nullable(),
   onboardingComplete: z.boolean(),
+  // Immediately produce a shareable MP4 when a recording stops. `.default`
+  // keeps older settings files (written before this field existed) valid on
+  // load instead of resetting every preference.
+  autoExportOnStop: z.boolean().default(true),
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 
@@ -23,4 +27,5 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   storageLocation: null,
   storageQuotaGb: null,
   onboardingComplete: false,
+  autoExportOnStop: true,
 };

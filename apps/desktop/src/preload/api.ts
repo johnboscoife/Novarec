@@ -28,6 +28,9 @@ export interface NovaRecApi {
   setCaptureSource(
     payload: IpcRequest<'capture:setSource'>,
   ): Promise<IpcResponse<'capture:setSource'>>;
+  setProbeMotion(
+    payload: IpcRequest<'capture:probeMotion'>,
+  ): Promise<IpcResponse<'capture:probeMotion'>>;
 
   // --- Recording (Phase 2) ---
   startRecording(payload: IpcRequest<'recording:start'>): Promise<IpcResponse<'recording:start'>>;

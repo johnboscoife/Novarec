@@ -62,6 +62,15 @@ export function SettingsView(): ReactElement {
           />
         </Panel>
 
+        <Panel title="Recording">
+          <ToggleRow
+            label="Auto-export when I stop"
+            hint="As soon as a recording stops, produce a shareable MP4 (YouTube 1080p) and reveal it — no extra click."
+            checked={current.autoExportOnStop}
+            onChange={(v) => update({ autoExportOnStop: v })}
+          />
+        </Panel>
+
         <Panel title="Privacy">
           <ToggleRow
             label="Anonymous usage telemetry"

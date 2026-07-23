@@ -89,6 +89,12 @@ export const ipcContract = {
     request: z.object({ sourceId: z.string().nullable(), audio: z.boolean() }),
     response: Ok,
   },
+  // Drive on-screen motion on the *captured* display during a capacity probe,
+  // so a static screen doesn't read as "0 fps". `on: false` tears it down.
+  'capture:probeMotion': {
+    request: z.object({ on: z.boolean(), sourceId: z.string().nullable() }),
+    response: Ok,
+  },
 
   // --- Recording (Phase 2/3): renderer streams encoded data; main persists it.
   // Multi-track: each enabled track is an independent segment writer. ---

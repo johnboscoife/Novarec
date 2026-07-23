@@ -31,4 +31,17 @@ describe('app settings', () => {
     expect(parsed.telemetryOptIn).toBe(false);
     expect(parsed.vaultMode).toBe(false);
   });
+
+  it('defaults auto-export on', () => {
+    expect(DEFAULT_APP_SETTINGS.autoExportOnStop).toBe(true);
+  });
+
+  it('fills auto-export for older settings files without resetting other prefs', () => {
+    // Simulate a settings file written before autoExportOnStop existed.
+    const older: Record<string, unknown> = { ...DEFAULT_APP_SETTINGS, theme: 'dark' };
+    delete older.autoExportOnStop;
+    const parsed = AppSettingsSchema.parse(older);
+    expect(parsed.autoExportOnStop).toBe(true); // filled by default
+    expect(parsed.theme).toBe('dark'); // existing preference preserved
+  });
 });
