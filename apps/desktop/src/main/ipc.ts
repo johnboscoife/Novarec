@@ -33,6 +33,12 @@ import {
 } from './recording/session.js';
 import { runExport } from './recording/export.js';
 import { loadAppSettings, saveAppSettings } from './app-settings-store.js';
+import {
+  signIn as googleSignIn,
+  signOut as googleSignOut,
+  getProfile as googleGetProfile,
+  createMeet as googleCreateMeet,
+} from './meet/google-auth.js';
 
 /** Register an invoke handler that validates the request AND response with Zod. */
 function handleChannel<C extends IpcChannel>(
@@ -153,4 +159,13 @@ export function registerIpcHandlers(): void {
   // --- App settings (Phase 10) ---
   handleChannel('settings:get', () => loadAppSettings());
   handleChannel('settings:save', (req) => saveAppSettings(req));
+
+  // --- Google account (Meet) ---
+  handleChannel('google:signIn', () => googleSignIn());
+  handleChannel('google:signOut', async () => {
+    await googleSignOut();
+    return { ok: true as const };
+  });
+  handleChannel('google:getProfile', () => googleGetProfile());
+  handleChannel('google:createMeet', async () => ({ url: await googleCreateMeet() }));
 }

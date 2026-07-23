@@ -64,6 +64,12 @@ export interface NovaRecApi {
   getAppSettings(): Promise<IpcResponse<'settings:get'>>;
   saveAppSettings(payload: IpcRequest<'settings:save'>): Promise<IpcResponse<'settings:save'>>;
 
+  // --- Google account (Meet) ---
+  googleSignIn(): Promise<IpcResponse<'google:signIn'>>;
+  googleSignOut(): Promise<IpcResponse<'google:signOut'>>;
+  googleGetProfile(): Promise<IpcResponse<'google:getProfile'>>;
+  googleCreateMeet(): Promise<IpcResponse<'google:createMeet'>>;
+
   // --- Global hotkeys (Phase 5) --- returns an unsubscribe function.
   onHotkey(callback: (action: HotkeyAction) => void): () => void;
 }

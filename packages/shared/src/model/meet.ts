@@ -65,6 +65,14 @@ export function pendingConsent(ledger: ConsentLedger, participantIds: readonly s
 export const GOOGLE_MEET_HOST = 'meet.google.com';
 export const NEW_GOOGLE_MEET_URL = `https://${GOOGLE_MEET_HOST}/new`;
 
+/** The signed-in Google account shown in the Meet section. */
+export const GoogleProfileSchema = z.object({
+  email: z.string(),
+  name: z.string(),
+  picture: z.string().nullable(),
+});
+export type GoogleProfile = z.infer<typeof GoogleProfileSchema>;
+
 /** A Meet code looks like `abc-defg-hij` (3-4-3 letters). */
 const MEET_CODE = /^[a-z]{3}-[a-z]{4}-[a-z]{3}$/i;
 

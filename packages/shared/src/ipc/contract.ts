@@ -13,6 +13,7 @@ import {
 } from '../model/recording-io.js';
 import { ExportSettingsSchema } from '../model/export.js';
 import { AppSettingsSchema } from '../model/settings.js';
+import { GoogleProfileSchema } from '../model/meet.js';
 
 const Bytes = z.instanceof(Uint8Array);
 const Ok = z.object({ ok: z.literal(true) });
@@ -148,6 +149,13 @@ export const ipcContract = {
   // --- App settings (Phase 10) ---
   'settings:get': { request: z.void(), response: AppSettingsSchema },
   'settings:save': { request: AppSettingsSchema, response: AppSettingsSchema },
+
+  // --- Google account (Meet) --- OAuth runs in main; the renderer only ever
+  // sees the resulting profile, never tokens.
+  'google:signIn': { request: z.void(), response: GoogleProfileSchema },
+  'google:signOut': { request: z.void(), response: Ok },
+  'google:getProfile': { request: z.void(), response: GoogleProfileSchema.nullable() },
+  'google:createMeet': { request: z.void(), response: z.object({ url: z.string() }) },
 } as const;
 
 export type IpcContract = typeof ipcContract;

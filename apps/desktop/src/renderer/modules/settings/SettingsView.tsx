@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from 'react';
+import { useState, type ReactElement, type ReactNode } from 'react';
 import {
   DEFAULT_HOTKEYS,
   humanizeAccelerator,
@@ -94,6 +94,8 @@ export function SettingsView(): ReactElement {
           </Row>
         </Panel>
 
+        <GoogleAccountPanel current={current} onSave={update} />
+
         <Panel title="Global shortcuts">
           <ul className="space-y-1.5 text-sm">
             {DEFAULT_HOTKEYS.map((binding) => (
@@ -108,6 +110,53 @@ export function SettingsView(): ReactElement {
         </Panel>
       </div>
     </section>
+  );
+}
+
+function GoogleAccountPanel({
+  current,
+  onSave,
+}: {
+  current: AppSettings;
+  onSave: (patch: Partial<AppSettings>) => void;
+}): ReactElement {
+  const [clientId, setClientId] = useState(current.googleClientId ?? '');
+  const [clientSecret, setClientSecret] = useState(current.googleClientSecret ?? '');
+
+  return (
+    <Panel title="Google account (Meet)">
+      <p className="text-xs leading-relaxed text-muted-app">
+        To sign in with Google inside NovaRec, create an OAuth <strong>Desktop app</strong> client
+        in Google Cloud (APIs &amp; Services → Credentials), enable the{' '}
+        <strong>Google Meet API</strong>, and paste the client ID and secret here. A desktop client
+        secret isn&apos;t confidential. Then sign in from the Meet section.
+      </p>
+      <div className="mt-3 space-y-3">
+        <label className="block">
+          <span className="mb-1 block text-sm text-app2">Client ID</span>
+          <input
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
+            onBlur={() => onSave({ googleClientId: clientId.trim() || null })}
+            placeholder="…apps.googleusercontent.com"
+            spellCheck={false}
+            className="w-full rounded-md bg-surface2 px-3 py-2 text-sm text-app placeholder:text-dim-app"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-sm text-app2">Client secret</span>
+          <input
+            type="password"
+            value={clientSecret}
+            onChange={(e) => setClientSecret(e.target.value)}
+            onBlur={() => onSave({ googleClientSecret: clientSecret.trim() || null })}
+            placeholder="GOCSPX-…"
+            spellCheck={false}
+            className="w-full rounded-md bg-surface2 px-3 py-2 text-sm text-app placeholder:text-dim-app"
+          />
+        </label>
+      </div>
+    </Panel>
   );
 }
 

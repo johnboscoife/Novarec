@@ -16,6 +16,11 @@ export const AppSettingsSchema = z.object({
   // keeps older settings files (written before this field existed) valid on
   // load instead of resetting every preference.
   autoExportOnStop: z.boolean().default(true),
+  // Google OAuth "Desktop app" client credentials for in-app Meet sign-in. The
+  // user pastes these from their own Google Cloud project (a desktop client
+  // secret is not confidential). Null until configured.
+  googleClientId: z.string().nullable().default(null),
+  googleClientSecret: z.string().nullable().default(null),
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 
@@ -28,4 +33,6 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   storageQuotaGb: null,
   onboardingComplete: false,
   autoExportOnStop: true,
+  googleClientId: null,
+  googleClientSecret: null,
 };
