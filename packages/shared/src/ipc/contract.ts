@@ -90,9 +90,21 @@ export const ipcContract = {
     response: Ok,
   },
   // Drive on-screen motion on the *captured* display during a capacity probe,
-  // so a static screen doesn't read as "0 fps". `on: false` tears it down.
+  // so a static screen doesn't read as "0 fps". The renderer passes the target
+  // display's DIP bounds (it already maps each screen source to a display);
+  // main just animates a bar there. `bounds: null` / `on: false` tears it down.
   'capture:probeMotion': {
-    request: z.object({ on: z.boolean(), sourceId: z.string().nullable() }),
+    request: z.object({
+      on: z.boolean(),
+      bounds: z
+        .object({
+          x: z.number(),
+          y: z.number(),
+          width: z.number().positive(),
+          height: z.number().positive(),
+        })
+        .nullable(),
+    }),
     response: Ok,
   },
 

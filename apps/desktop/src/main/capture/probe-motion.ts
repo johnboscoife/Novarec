@@ -1,4 +1,4 @@
-import { BrowserWindow, desktopCapturer, screen } from 'electron';
+import { BrowserWindow } from 'electron';
 
 /**
  * Capacity-probe motion overlay.
@@ -7,16 +7,31 @@ import { BrowserWindow, desktopCapturer, screen } from 'electron';
  * captured picture changes, so probing a still screen reads as ~0 fps. The Record
  * view paints an animated bar to force change — but that bar lives in NovaRec's
  * own window and therefore only covers the display NovaRec sits on. To measure a
- * *different* display fairly, we open a tiny transparent, click-through,
- * always-on-top window on that display and animate it. The desktop capturer sees
- * constant change and delivers at its true rate.
+ * *different* display fairly, we animate a bar there too.
+ *
+ * The renderer already maps each screen source to a display (it shows per-screen
+ * DPI/bounds), so it passes the target display's DIP bounds directly — we do NOT
+ * re-derive them from `DesktopCapturerSource.display_id`, which is unreliable on
+ * Windows. The overlay is a thin, opaque, click-through, always-on-top strip: the
+ * same kind of visible animated element that already drives the primary display
+ * to full rate. Opaque (not transparent) so it reliably registers as screen
+ * change for the capturer.
  */
+
+interface Bounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+const STRIP_HEIGHT = 6;
 
 const MOTION_HTML =
   'data:text/html,' +
   encodeURIComponent(
     '<!doctype html><meta charset="utf-8">' +
-      '<style>html,body{margin:0;height:100%;background:transparent;overflow:hidden}' +
+      '<style>html,body{margin:0;height:100%;overflow:hidden;background:#0b0b0f}' +
       '#b{position:fixed;inset:0;background:linear-gradient(90deg,#3b5bff,#7c5cff,#3b5bff);' +
       'background-size:200% 100%}</style>' +
       '<div id="b"></div>' +
@@ -27,40 +42,17 @@ const MOTION_HTML =
 
 let overlay: BrowserWindow | null = null;
 
-async function boundsForSource(
-  sourceId: string,
-): Promise<{ x: number; y: number; width: number; height: number } | null> {
-  const sources = await desktopCapturer.getSources({
-    types: ['screen'],
-    thumbnailSize: { width: 0, height: 0 },
-  });
-  const source = sources.find((s) => s.id === sourceId);
-  if (!source) return null;
-  const display =
-    screen.getAllDisplays().find((d) => String(d.id) === source.display_id) ??
-    screen.getPrimaryDisplay();
-  return display.bounds;
-}
-
-/**
- * Show the animated overlay on the display backing `sourceId`. Only screen
- * sources can be driven this way (a window source can't be forced to repaint);
- * for those we no-op and rely on the renderer's in-window bar.
- */
-export async function startProbeMotion(sourceId: string | null): Promise<void> {
+/** Show the animated strip at the top of the given display bounds (DIP). */
+export async function startProbeMotion(bounds: Bounds | null): Promise<void> {
   stopProbeMotion();
-  if (!sourceId || !sourceId.startsWith('screen:')) return;
-
-  const bounds = await boundsForSource(sourceId);
   if (!bounds) return;
 
   const win = new BrowserWindow({
-    x: bounds.x,
-    y: bounds.y,
-    width: bounds.width,
-    height: 8,
+    x: Math.round(bounds.x),
+    y: Math.round(bounds.y),
+    width: Math.round(bounds.width),
+    height: STRIP_HEIGHT,
     frame: false,
-    transparent: true,
     resizable: false,
     movable: false,
     minimizable: false,
@@ -70,6 +62,7 @@ export async function startProbeMotion(sourceId: string | null): Promise<void> {
     hasShadow: false,
     alwaysOnTop: true,
     show: false,
+    backgroundColor: '#0b0b0f',
   });
   win.setIgnoreMouseEvents(true);
   win.setAlwaysOnTop(true, 'screen-saver');

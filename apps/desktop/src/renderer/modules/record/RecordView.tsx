@@ -97,7 +97,15 @@ export function RecordView(): ReactElement {
     setProbing(true);
     setProbeError(null);
     try {
-      setProbe(await runSustainProbe(selectedSourceId, targetFps));
+      // If a screen is selected, hand main the DIP bounds of its backing display
+      // so it can drive motion on THAT display (not NovaRec's own). Windows have
+      // no display bounds — the in-window bar covers those.
+      const screenSource = screens.find((s) => s.id === selectedSourceId);
+      const display = screenSource
+        ? displays.data?.find((d) => d.id === screenSource.displayId)
+        : undefined;
+      const motionBounds = display ? display.bounds : null;
+      setProbe(await runSustainProbe(selectedSourceId, targetFps, motionBounds));
     } catch (err) {
       setProbeError(err instanceof Error ? err.message : 'Capture probe failed');
     } finally {

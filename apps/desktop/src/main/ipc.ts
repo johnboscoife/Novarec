@@ -105,7 +105,7 @@ export function registerIpcHandlers(): void {
   });
 
   handleChannel('capture:probeMotion', async (req) => {
-    if (req.on) await startProbeMotion(req.sourceId);
+    if (req.on) await startProbeMotion(req.bounds);
     else stopProbeMotion();
     return { ok: true as const };
   });

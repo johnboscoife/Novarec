@@ -40,15 +40,24 @@ interface TrackProcessorCtor {
   new (init: { track: MediaStreamTrack }): TrackProcessor;
 }
 
+/** DIP bounds of the display backing the probed screen source, if known. */
+export interface MotionBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export async function runSustainProbe(
   sourceId: string,
   targetFps: number,
+  motionBounds: MotionBounds | null = null,
   durationMs = 3000,
 ): Promise<ProbeResult> {
   await window.novarec.setCaptureSource({ sourceId, audio: false });
   // Drive motion on the *captured* display (may differ from NovaRec's own), so a
-  // secondary screen isn't measured as static. Harmless for window sources.
-  await window.novarec.setProbeMotion({ on: true, sourceId }).catch(() => undefined);
+  // secondary screen isn't measured as static. Null for window sources.
+  await window.novarec.setProbeMotion({ on: true, bounds: motionBounds }).catch(() => undefined);
   const stream = await navigator.mediaDevices.getDisplayMedia({
     video: { frameRate: targetFps },
     audio: false,
@@ -66,7 +75,7 @@ export async function runSustainProbe(
     };
   } finally {
     stopMotion();
-    await window.novarec.setProbeMotion({ on: false, sourceId: null }).catch(() => undefined);
+    await window.novarec.setProbeMotion({ on: false, bounds: null }).catch(() => undefined);
     stream.getTracks().forEach((t) => t.stop());
   }
 }
