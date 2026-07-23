@@ -75,7 +75,7 @@ export function WebcamOverlay(): ReactElement {
     inset: 0,
     boxSizing: 'border-box',
     overflow: 'hidden',
-    background: error ? 'rgba(10,10,15,0.92)' : '#000',
+    background: error ? 'rgba(10,10,15,0.92)' : 'transparent',
     border: '3px solid rgba(255,255,255,0.92)',
     borderRadius: radius,
     cursor: 'move',
@@ -85,6 +85,9 @@ export function WebcamOverlay(): ReactElement {
     height: '100%',
     objectFit: 'cover',
     display: 'block',
+    // Clip the video itself — a transformed <video> escapes the parent's
+    // border-radius clip in Chromium, so the shape must live on the video too.
+    borderRadius: radius,
     transform: 'scaleX(-1)', // mirror, like every webcam preview
   };
 

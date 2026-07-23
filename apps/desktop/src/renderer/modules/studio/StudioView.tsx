@@ -458,6 +458,19 @@ function PropertiesPanel({
             </div>
           </>
         )}
+        {source.kind !== 'text' && (
+          <Field label="Shape">
+            <select
+              value={source.shape}
+              onChange={(e) => onUpdate({ shape: e.target.value as SceneSource['shape'] })}
+              className="w-full rounded-md bg-surface2 px-2 py-1.5 text-xs text-app2"
+            >
+              <option value="rectangle">Rectangle</option>
+              <option value="rounded">Rounded</option>
+              <option value="circle">Circle</option>
+            </select>
+          </Field>
+        )}
         <div className="grid grid-cols-2 gap-2">
           <NumField label="X" value={source.x} onChange={(v) => onUpdate({ x: v })} />
           <NumField label="Y" value={source.y} onChange={(v) => onUpdate({ y: v })} />

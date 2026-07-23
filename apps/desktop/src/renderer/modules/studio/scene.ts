@@ -9,6 +9,9 @@ export const SCENE_HEIGHT = 1080;
 
 export type SceneSourceKind = 'screen' | 'camera' | 'image' | 'text';
 
+/** How a visual source is clipped when drawn (camera/image/screen). */
+export type SceneShape = 'rectangle' | 'rounded' | 'circle';
+
 export interface SceneSource {
   id: string;
   kind: SceneSourceKind;
@@ -18,6 +21,7 @@ export interface SceneSource {
   y: number;
   width: number;
   height: number;
+  shape: SceneShape;
   deviceId: string | null; // camera
   screenSourceId: string | null; // desktopCapturer id (screen)
   dataUrl: string | null; // image
@@ -87,6 +91,7 @@ export function defaultSource(kind: SceneSourceKind, id: string): SceneSource {
     y: 0,
     width: SCENE_WIDTH,
     height: SCENE_HEIGHT,
+    shape: 'rectangle',
     deviceId: null,
     screenSourceId: null,
     dataUrl: null,
@@ -95,7 +100,15 @@ export function defaultSource(kind: SceneSourceKind, id: string): SceneSource {
     fontSize: 96,
   };
   if (kind === 'camera') {
-    return { ...base, width: 480, height: 270, x: SCENE_WIDTH - 520, y: SCENE_HEIGHT - 310 };
+    // A square box + circle shape reads as a classic webcam bubble.
+    return {
+      ...base,
+      shape: 'circle',
+      width: 360,
+      height: 360,
+      x: SCENE_WIDTH - 400,
+      y: SCENE_HEIGHT - 400,
+    };
   }
   if (kind === 'image') {
     return {

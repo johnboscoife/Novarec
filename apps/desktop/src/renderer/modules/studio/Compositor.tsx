@@ -144,7 +144,27 @@ function paint(
     const media = getMedia(s);
     if (media) {
       try {
+        ctx.save();
+        if (s.shape !== 'rectangle') {
+          ctx.beginPath();
+          if (s.shape === 'circle') {
+            ctx.ellipse(
+              s.x + s.width / 2,
+              s.y + s.height / 2,
+              s.width / 2,
+              s.height / 2,
+              0,
+              0,
+              Math.PI * 2,
+            );
+          } else {
+            const r = Math.min(s.width, s.height) * 0.12;
+            ctx.roundRect(s.x, s.y, s.width, s.height, r);
+          }
+          ctx.clip();
+        }
         ctx.drawImage(media, s.x, s.y, s.width, s.height);
+        ctx.restore();
       } catch {
         // frame not ready yet
       }
