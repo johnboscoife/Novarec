@@ -151,22 +151,35 @@ export class MultiTrackRecorder {
     const { recordingId } = await window.novarec.startRecording({ tracks: enabled });
     this.recordingId = recordingId;
 
+    // Acquire each track independently — a failure (e.g. system-audio loopback
+    // unavailable) skips that track instead of breaking the whole recording.
     for (const config of enabled) {
-      const stream = await acquireStream(config, targetFps);
-      const isVideo = config.kind === 'screen' || config.kind === 'camera';
-      const recorder = new TrackRecorder(
-        recordingId,
-        config.id,
-        stream,
-        isVideo,
-        this.callbacks.onError,
-        (count) => {
-          this.perTrack.set(config.id, count);
-          this.callbacks.onSegmentCount([...this.perTrack.values()].reduce((a, b) => a + b, 0));
-        },
-      );
-      recorder.start();
-      this.tracks.push(recorder);
+      try {
+        const stream = await acquireStream(config, targetFps);
+        const isVideo = config.kind === 'screen' || config.kind === 'camera';
+        const recorder = new TrackRecorder(
+          recordingId,
+          config.id,
+          stream,
+          isVideo,
+          this.callbacks.onError,
+          (count) => {
+            this.perTrack.set(config.id, count);
+            this.callbacks.onSegmentCount([...this.perTrack.values()].reduce((a, b) => a + b, 0));
+          },
+        );
+        recorder.start();
+        this.tracks.push(recorder);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : 'unknown error';
+        this.callbacks.onError(`Couldn't start ${config.label}: ${reason}`);
+      }
+    }
+
+    if (this.tracks.length === 0) {
+      await window.novarec.stopRecording({ recordingId, atMs: performance.now() });
+      this.recordingId = null;
+      throw new Error('No tracks could be started — check permissions and try again');
     }
   }
 

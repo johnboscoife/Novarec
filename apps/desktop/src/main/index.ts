@@ -17,6 +17,8 @@ function createMainWindow(): void {
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
+      // Keep capture running at full speed even if the window loses focus.
+      backgroundThrottling: false,
       // Security posture is correct from commit one, not retrofitted.
       sandbox: true,
       contextIsolation: true,
@@ -26,6 +28,16 @@ function createMainWindow(): void {
   });
 
   window.on('ready-to-show', () => window.show());
+
+  // Recover from a renderer/GPU crash (e.g. during heavy screen capture) by
+  // reloading, instead of leaving a black window.
+  window.webContents.on('render-process-gone', (_event, details) => {
+    console.error('Renderer process gone:', details.reason);
+    if (details.reason !== 'clean-exit' && !window.isDestroyed()) window.reload();
+  });
+  window.webContents.on('unresponsive', () => {
+    if (!window.isDestroyed()) window.webContents.reload();
+  });
 
   // External links open in the OS browser, never inside the app.
   window.webContents.setWindowOpenHandler(({ url }) => {
@@ -57,6 +69,10 @@ app
     console.error('Failed to start NovaRec main process:', error);
     app.quit();
   });
+
+app.on('child-process-gone', (_event, details) => {
+  console.error(`Child process gone: ${details.type} (${details.reason})`);
+});
 
 app.on('will-quit', () => unregisterHotkeys());
 

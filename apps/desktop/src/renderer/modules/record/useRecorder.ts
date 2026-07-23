@@ -48,8 +48,14 @@ export function useRecorder(): RecorderControls {
     recorderRef.current = recorder;
     startedAt.current = performance.now();
     pausedAccumMs.current = 0;
-    await recorder.start(configs, targetFps);
-    setState('recording');
+    try {
+      await recorder.start(configs, targetFps);
+      setState('recording');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start recording');
+      recorderRef.current = null;
+      setState('idle');
+    }
   }, []);
 
   const pause = useCallback(async () => {
