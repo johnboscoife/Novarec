@@ -30,6 +30,28 @@ function pickMime(candidates: string[]): string | null {
  * `getUserMedia`; system audio uses a loopback display-media request, keeping
  * only its audio track.
  */
+/**
+ * Acquire a camera/mic stream by device id, falling back to the system default
+ * if that exact device is gone (e.g. an external mic was unplugged) — so a
+ * disconnected device doesn't silently drop the track.
+ */
+export async function acquireDeviceStream(
+  kind: 'audio' | 'video',
+  deviceId: string | null,
+): Promise<MediaStream> {
+  const media = navigator.mediaDevices;
+  const constraint = (id: string | null): MediaStreamConstraints =>
+    kind === 'audio'
+      ? { audio: id ? { deviceId: { exact: id } } : true }
+      : { video: id ? { deviceId: { exact: id } } : true };
+  try {
+    return await media.getUserMedia(constraint(deviceId));
+  } catch (error) {
+    if (!deviceId) throw error; // already asked for the default — nothing to fall back to
+    return media.getUserMedia(constraint(null)); // chosen device unavailable → system default
+  }
+}
+
 async function acquireStream(
   config: TrackConfig,
   targetFps: number,
@@ -42,13 +64,9 @@ async function acquireStream(
       return media.getDisplayMedia({ video: { frameRate: targetFps }, audio: false });
     }
     case 'camera':
-      return media.getUserMedia({
-        video: config.deviceId ? { deviceId: { exact: config.deviceId } } : true,
-      });
+      return acquireDeviceStream('video', config.deviceId ?? null);
     case 'microphone':
-      return media.getUserMedia({
-        audio: config.deviceId ? { deviceId: { exact: config.deviceId } } : true,
-      });
+      return acquireDeviceStream('audio', config.deviceId ?? null);
     case 'systemAudio': {
       await window.novarec.setCaptureSource({ sourceId: screenSourceId, audio: true });
       const combined = await media.getDisplayMedia({ video: true, audio: true });

@@ -85,10 +85,17 @@ async function acquire(
 
     let stream: MediaStream;
     if (source.kind === 'camera') {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: source.deviceId ? { deviceId: { exact: source.deviceId } } : true,
-        audio: false,
-      });
+      const id = source.deviceId;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: id ? { deviceId: { exact: id } } : true,
+          audio: false,
+        });
+      } catch (e) {
+        if (!id) throw e;
+        // Chosen camera unplugged → fall back to the default camera.
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
     } else {
       await window.novarec.setCaptureSource({ sourceId: source.screenSourceId, audio: false });
       stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });

@@ -43,11 +43,20 @@ export function WebcamOverlay(): ReactElement {
     let stream: MediaStream | null = null;
     let cancelled = false;
     setError(null);
-    navigator.mediaDevices
-      .getUserMedia({
-        video: deviceId ? { deviceId: { exact: deviceId } } : true,
-        audio: false,
-      })
+    const getCamera = async (): Promise<MediaStream> => {
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          video: deviceId ? { deviceId: { exact: deviceId } } : true,
+          audio: false,
+        });
+      } catch (e) {
+        if (!deviceId) throw e;
+        // Chosen webcam gone (unplugged) → fall back to the default camera.
+        return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
+    };
+
+    getCamera()
       .then((s) => {
         if (cancelled) {
           s.getTracks().forEach((t) => t.stop());
