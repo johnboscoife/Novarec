@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_HOTKEYS,
   findHotkeyConflicts,
+  humanizeAccelerator,
   normalizeAccelerator,
   type HotkeyBinding,
 } from './hotkeys.js';
@@ -40,6 +41,16 @@ describe('hotkey conflicts', () => {
       ['Alt+F4'],
     );
     expect(conflicts[0]?.reserved).toBe(true);
+  });
+});
+
+describe('humanizeAccelerator', () => {
+  it('shows Ctrl-style labels on Windows/Linux', () => {
+    expect(humanizeAccelerator('CommandOrControl+Shift+R', 'win32')).toBe('Ctrl+Shift+R');
+    expect(humanizeAccelerator('CommandOrControl+Shift+Escape', 'win32')).toBe('Ctrl+Shift+Esc');
+  });
+  it('shows glyphs on macOS', () => {
+    expect(humanizeAccelerator('CommandOrControl+Shift+R', 'darwin')).toBe('⌘⇧R');
   });
 });
 

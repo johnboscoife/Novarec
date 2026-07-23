@@ -71,6 +71,35 @@ export function normalizeAccelerator(accelerator: string): string {
   return [...uniqueSortedModifiers, ...keys].join('+');
 }
 
+const HUMANIZE_MAC: Record<string, string> = {
+  CommandOrControl: '⌘',
+  Command: '⌘',
+  Control: '⌃',
+  Alt: '⌥',
+  Shift: '⇧',
+  Super: '⌘',
+  Escape: 'Esc',
+};
+const HUMANIZE_OTHER: Record<string, string> = {
+  CommandOrControl: 'Ctrl',
+  Command: 'Win',
+  Control: 'Ctrl',
+  Alt: 'Alt',
+  Shift: 'Shift',
+  Super: 'Win',
+  Escape: 'Esc',
+};
+
+/** Turn an Electron accelerator into a platform-friendly display string. */
+export function humanizeAccelerator(
+  accelerator: string,
+  platform: 'win32' | 'darwin' | 'linux',
+): string {
+  const map = platform === 'darwin' ? HUMANIZE_MAC : HUMANIZE_OTHER;
+  const parts = accelerator.split('+').map((token) => map[token] ?? token);
+  return parts.join(platform === 'darwin' ? '' : '+');
+}
+
 export interface HotkeyConflict {
   accelerator: string;
   actions: HotkeyAction[];
