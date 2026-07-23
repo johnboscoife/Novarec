@@ -61,10 +61,10 @@ const h264 = (width: number, height: number, fps: number, crf: number): ExportSe
 });
 
 export const EXPORT_PRESETS: ExportPreset[] = [
-  { id: 'youtube', label: 'YouTube 1080p', settings: h264(1920, 1080, 60, 18) },
-  { id: 'youtube4k', label: 'YouTube 4K', settings: h264(3840, 2160, 60, 18) },
-  { id: 'linkedin', label: 'LinkedIn', settings: h264(1920, 1080, 30, 20) },
-  { id: 'tiktok', label: 'TikTok / Reels / Shorts', settings: h264(1080, 1920, 30, 20) },
+  { id: 'youtube', label: '1080p · MP4', settings: h264(1920, 1080, 60, 18) },
+  { id: 'youtube4k', label: '4K · MP4', settings: h264(3840, 2160, 60, 18) },
+  { id: 'linkedin', label: '1080p · 30 fps', settings: h264(1920, 1080, 30, 20) },
+  { id: 'tiktok', label: 'Vertical · 1080×1920', settings: h264(1080, 1920, 30, 20) },
   {
     id: 'gif',
     label: 'GIF',

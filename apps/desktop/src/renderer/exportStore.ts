@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { EXPORT_PRESETS } from '@novarec/shared';
+import type { ExportSettings } from '@novarec/shared';
 
 /**
  * App-wide export job. Lives outside any view so an export keeps running (and
@@ -16,7 +16,7 @@ interface ExportStore {
   outputPath: string | null;
   error: string | null;
   dir: string | null; // recording dir this job is for
-  start: (dir: string) => void;
+  start: (dir: string, settings: ExportSettings) => void;
   reset: () => void;
 }
 
@@ -27,17 +27,15 @@ export const useExportStore = create<ExportStore>()((set, get) => ({
   error: null,
   dir: null,
   reset: () => set({ status: 'idle', progress: 0, outputPath: null, error: null, dir: null }),
-  start: (dir) => {
+  start: (dir, settings) => {
     if (get().status === 'running') return;
-    const youtube = EXPORT_PRESETS.find((p) => p.id === 'youtube');
-    if (!youtube) return;
     set({ status: 'running', progress: 0, outputPath: null, error: null, dir });
 
     const off = window.novarec.onExportProgress(({ elapsedMs, totalMs }) => {
       set({ progress: totalMs > 0 ? Math.min(1, elapsedMs / totalMs) : 0 });
     });
     window.novarec
-      .runExport({ recordingDir: dir, settings: youtube.settings })
+      .runExport({ recordingDir: dir, settings })
       .then(async ({ outputPath }) => {
         set({ status: 'done', progress: 1, outputPath });
         await window.novarec.revealPath({ path: outputPath }).catch(() => undefined);

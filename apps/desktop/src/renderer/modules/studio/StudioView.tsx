@@ -6,8 +6,15 @@ export function StudioView(): ReactElement {
     <Placeholder
       tagline="Studio"
       title="OBS's engine, Clipchamp's front door"
-      description="Scene-based live compositing, virtual camera, and multi-destination streaming, sharing the same compositor as Record and Meet. The scene, compositor, and streaming engines are ready; the live studio UI is coming soon."
+      description="Scene-based live compositing, virtual camera, and multi-destination streaming, sharing the same compositor as Record and Meet."
       ctaLabel="Coming soon"
+      features={[
+        { label: 'Scene model & compositor engine', done: true },
+        { label: 'Streaming engine (RTMP, multi-destination)', done: true },
+        { label: 'Virtual-camera plumbing', done: true },
+        { label: 'Live studio canvas & scene switching', done: false },
+        { label: 'Sources & overlays panel', done: false },
+      ]}
     />
   );
 }

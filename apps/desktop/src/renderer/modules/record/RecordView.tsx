@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { sustainVerdict, type SustainVerdict } from '@novarec/capture';
 import {
+  EXPORT_PRESETS,
   SUPPORTED_TARGET_FPS,
   countdownSequence,
   type CaptureSource,
   type ControlAction,
+  type ExportSettings,
   type HotkeyAction,
   type SavedRegion,
   type TargetFps,
@@ -24,7 +26,7 @@ import { runSustainProbe, type ProbeResult } from './probe.js';
 import { useRecorder } from './useRecorder.js';
 import { RecordingControls } from './RecordingControls.js';
 import { RecoveryBanner } from './RecoveryBanner.js';
-import { useAppSettings } from '../settings/useAppSettings.js';
+import { useAppSettings, useSaveAppSettings } from '../settings/useAppSettings.js';
 import { useExportStore } from '../../exportStore.js';
 
 const VERDICT_STYLE: Record<SustainVerdict, { label: string; className: string }> = {
@@ -32,6 +34,11 @@ const VERDICT_STYLE: Record<SustainVerdict, { label: string; className: string }
   marginal: { label: 'Marginal', className: 'text-amber-400' },
   dropped: { label: 'Dropping frames', className: 'text-red-400' },
 };
+
+const DEFAULT_PRESET = EXPORT_PRESETS[0]!;
+function presetSettings(id: string): ExportSettings {
+  return (EXPORT_PRESETS.find((p) => p.id === id) ?? DEFAULT_PRESET).settings;
+}
 
 export function RecordView(): ReactElement {
   const displays = useDisplays();
@@ -101,7 +108,9 @@ export function RecordView(): ReactElement {
   const recorder = useRecorder();
   const info = useAppInfo();
   const appSettings = useAppSettings();
+  const saveAppSettings = useSaveAppSettings();
   const autoExportedDir = useRef<string | null>(null);
+  const exportPresetId = appSettings.data?.exportPreset ?? 'youtube';
 
   // Restore the last Record setup (once, when both settings have loaded) if the
   // user opted to retain it; then keep persisting the setup as it changes.
@@ -233,7 +242,9 @@ export function RecordView(): ReactElement {
   }
 
   function exportLastRecording(): void {
-    if (recorder.lastRecordingDir) exportJob.start(recorder.lastRecordingDir);
+    if (recorder.lastRecordingDir) {
+      exportJob.start(recorder.lastRecordingDir, presetSettings(exportPresetId));
+    }
   }
 
   // View-scoped mirror of the app-wide export job for the "Last recording" card.
@@ -254,7 +265,7 @@ export function RecordView(): ReactElement {
       exportJob.status !== 'running'
     ) {
       autoExportedDir.current = dir;
-      exportJob.start(dir);
+      exportJob.start(dir, presetSettings(exportPresetId));
     }
   };
   useEffect(() => {
@@ -385,18 +396,32 @@ export function RecordView(): ReactElement {
                 {exportedPath ?? recorder.lastRecordingDir}
               </p>
             </div>
-            <button
-              type="button"
-              disabled={exporting}
-              onClick={() => void exportLastRecording()}
-              className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition enabled:hover:bg-blue-500 disabled:opacity-60"
-            >
-              {exporting
-                ? 'Exporting…'
-                : exportedPath
-                  ? 'Exported ✓ · Export again'
-                  : 'Export video · 1080p'}
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              <select
+                value={exportPresetId}
+                disabled={exporting}
+                onChange={(e) =>
+                  appSettings.data &&
+                  saveAppSettings.mutate({ ...appSettings.data, exportPreset: e.target.value })
+                }
+                aria-label="Export format"
+                className="rounded-lg bg-surface2 px-3 py-2 text-sm text-app2 disabled:opacity-60"
+              >
+                {EXPORT_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                disabled={exporting}
+                onClick={() => void exportLastRecording()}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition enabled:hover:bg-blue-500 disabled:opacity-60"
+              >
+                {exporting ? 'Exporting…' : exportedPath ? 'Exported ✓ · Again' : 'Export'}
+              </button>
+            </div>
           </div>
           {exporting && exportProgress !== null && (
             <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface2">

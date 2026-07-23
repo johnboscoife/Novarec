@@ -27,6 +27,9 @@ export const AppSettingsSchema = z.object({
   exportFolder: z.string().nullable().default(null),
   // Delete the raw recording segments automatically once an export succeeds.
   deleteRawAfterExport: z.boolean().default(false),
+  // Default export format (an EXPORT_PRESETS id) used for auto-export and as the
+  // initial choice in the export picker.
+  exportPreset: z.string().default('youtube'),
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 
@@ -44,4 +47,5 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   retainSetup: true,
   exportFolder: null,
   deleteRawAfterExport: false,
+  exportPreset: 'youtube',
 };
