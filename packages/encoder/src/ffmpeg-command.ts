@@ -7,7 +7,18 @@ import type { AudioCodec, ExportSettings, RateControl, VideoCodec } from '@novar
  */
 export interface FfmpegInput {
   path: string;
+  /**
+   * What this input contributes to the export. Omitted for single-file exports
+   * (the legacy path). When present on any input, the builder composites: the
+   * camera is overlaid picture-in-picture on the screen, and multiple audio
+   * tracks are mixed.
+   */
+  role?: 'screen' | 'camera' | 'audio';
 }
+
+/** Picture-in-picture camera size (px, width) and margin from the corner. */
+const PIP_WIDTH = 320;
+const PIP_MARGIN = 24;
 
 const VIDEO_ENCODERS: Record<Exclude<VideoCodec, 'none'>, { sw: string; hw: string }> = {
   h264: { sw: 'libx264', hw: 'h264_nvenc' },
@@ -42,6 +53,16 @@ export function buildFfmpegArgs(
   inputs: readonly FfmpegInput[],
   outputPath: string,
 ): string[] {
+  // Composite (camera PiP + audio mix) only when it's actually needed — a
+  // camera to overlay, or more than one audio track to blend. Screen-only and
+  // screen+single-audio recordings keep the simpler, proven single-map path,
+  // where FFmpeg's default stream selection already does the right thing.
+  const cameras = inputs.filter((i) => i.role === 'camera').length;
+  const audios = inputs.filter((i) => i.role === 'audio').length;
+  const needsComposite =
+    settings.container !== 'gif' && ((cameras > 0 && settings.videoCodec !== 'none') || audios > 1);
+  if (needsComposite) return buildCompositeArgs(settings, inputs, outputPath);
+
   const args: string[] = ['-y'];
   for (const input of inputs) args.push('-i', input.path);
 
@@ -74,6 +95,89 @@ export function buildFfmpegArgs(
       args.push('-b:a', `${settings.rateControl.bitrateKbps}k`);
     }
   }
+
+  args.push(outputPath);
+  return args;
+}
+
+function videoCodecArgs(settings: ExportSettings): string[] {
+  if (settings.videoCodec === 'none') return ['-vn'];
+  const encoder = VIDEO_ENCODERS[settings.videoCodec];
+  const out = ['-c:v', settings.hardwareEncode ? encoder.hw : encoder.sw];
+  out.push(...rateControlArgs(settings.rateControl, settings.hardwareEncode));
+  if (settings.fps) out.push('-r', String(settings.fps));
+  return out;
+}
+
+function audioCodecArgs(settings: ExportSettings): string[] {
+  if (settings.audioCodec === 'none') return ['-an'];
+  const out = ['-c:a', AUDIO_ENCODERS[settings.audioCodec]];
+  if (settings.rateControl.mode !== 'crf' && settings.audioCodec !== 'flac') {
+    out.push('-b:a', `${settings.rateControl.bitrateKbps}k`);
+  }
+  return out;
+}
+
+/**
+ * Multi-track export: overlay the camera on the screen (picture-in-picture,
+ * bottom-right) and mix every audio track together. Builds one `-filter_complex`
+ * graph and maps its labelled outputs explicitly, so stream selection is never
+ * left to chance.
+ */
+function buildCompositeArgs(
+  settings: ExportSettings,
+  inputs: readonly FfmpegInput[],
+  outputPath: string,
+): string[] {
+  const args: string[] = ['-y'];
+  for (const input of inputs) args.push('-i', input.path);
+
+  const screenIdx = inputs.findIndex((i) => i.role === 'screen');
+  const cameraIdx = inputs.findIndex((i) => i.role === 'camera');
+  const primaryVideoIdx = screenIdx >= 0 ? screenIdx : cameraIdx;
+  const audioIdxs = inputs.flatMap((i, idx) => (i.role === 'audio' ? [idx] : []));
+
+  const scale = scaleFilter(settings.width, settings.height);
+  const chains: string[] = [];
+  let videoMap: string | null = null;
+  let audioMap: string | null = null;
+
+  const wantVideo = settings.videoCodec !== 'none' && primaryVideoIdx >= 0;
+  if (wantVideo) {
+    const useCamera = cameraIdx >= 0 && cameraIdx !== primaryVideoIdx;
+    if (useCamera) {
+      let bg = `[${primaryVideoIdx}:v]`;
+      if (scale) {
+        chains.push(`[${primaryVideoIdx}:v]${scale}[bg]`);
+        bg = '[bg]';
+      }
+      chains.push(`[${cameraIdx}:v]scale=${PIP_WIDTH}:-2[pip]`);
+      chains.push(
+        `${bg}[pip]overlay=main_w-overlay_w-${PIP_MARGIN}:main_h-overlay_h-${PIP_MARGIN}[vout]`,
+      );
+    } else {
+      chains.push(`[${primaryVideoIdx}:v]${scale ?? 'null'}[vout]`);
+    }
+    videoMap = '[vout]';
+  }
+
+  const wantAudio = settings.audioCodec !== 'none' && audioIdxs.length > 0;
+  if (wantAudio) {
+    if (audioIdxs.length === 1) {
+      audioMap = `${audioIdxs[0]}:a`;
+    } else {
+      const labels = audioIdxs.map((idx) => `[${idx}:a]`).join('');
+      chains.push(`${labels}amix=inputs=${audioIdxs.length}:normalize=0[aout]`);
+      audioMap = '[aout]';
+    }
+  }
+
+  if (chains.length) args.push('-filter_complex', chains.join(';'));
+  if (videoMap) args.push('-map', videoMap);
+  if (audioMap) args.push('-map', audioMap);
+
+  args.push(...(wantVideo ? videoCodecArgs(settings) : ['-vn']));
+  args.push(...(wantAudio ? audioCodecArgs(settings) : ['-an']));
 
   args.push(outputPath);
   return args;

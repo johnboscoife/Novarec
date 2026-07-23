@@ -78,7 +78,7 @@ describe.skipIf(!hasFfmpeg)('export with real FFmpeg', () => {
       let lastProgress = 0;
       await exportRecording({
         ffmpegPath: ffmpeg,
-        inputs: [input],
+        inputs: [{ path: input }],
         settings,
         outputPath: output,
         onProgress: (ms) => {

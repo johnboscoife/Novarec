@@ -76,6 +76,52 @@ describe('buildFfmpegArgs', () => {
     expect(flagValue(args, '-bufsize')).toBe('10000k');
     expect(flagValue(args, '-vf')).toBe('scale=-2:1080'); // null width -> -2
   });
+
+  it('stays on the simple path for a single screen (+audio) recording', () => {
+    // Roles present but nothing to composite: no camera, one audio → no filter_complex.
+    const args = buildFfmpegArgs(
+      preset('youtube'),
+      [{ path: 'screen.mp4', role: 'screen' }],
+      'o.mp4',
+    );
+    expect(args).not.toContain('-filter_complex');
+    expect(flagValue(args, '-vf')).toBe('scale=1920:1080');
+  });
+
+  it('overlays the camera picture-in-picture over the screen', () => {
+    const args = buildFfmpegArgs(
+      preset('youtube'),
+      [
+        { path: 'screen.mp4', role: 'screen' },
+        { path: 'camera.mp4', role: 'camera' },
+        { path: 'mic.mp4', role: 'audio' },
+      ],
+      'o.mp4',
+    );
+    const graph = flagValue(args, '-filter_complex');
+    expect(graph).toBeDefined();
+    expect(graph).toContain('[1:v]scale=320:-2[pip]'); // camera scaled to PiP
+    expect(graph).toContain('overlay=main_w-overlay_w-24:main_h-overlay_h-24[vout]');
+    expect(args).toContain('-map');
+    expect(args).toContain('[vout]');
+    expect(args).toContain('2:a'); // mic mapped as the audio stream
+    expect(flagValue(args, '-c:v')).toBe('h264_nvenc');
+  });
+
+  it('mixes multiple audio tracks with amix', () => {
+    const args = buildFfmpegArgs(
+      preset('youtube'),
+      [
+        { path: 'screen.mp4', role: 'screen' },
+        { path: 'mic.mp4', role: 'audio' },
+        { path: 'system.mp4', role: 'audio' },
+      ],
+      'o.mp4',
+    );
+    const graph = flagValue(args, '-filter_complex');
+    expect(graph).toContain('[1:a][2:a]amix=inputs=2:normalize=0[aout]');
+    expect(args).toContain('[aout]');
+  });
 });
 
 describe('export queue', () => {

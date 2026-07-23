@@ -32,12 +32,14 @@ export async function runExport(
     throw new Error('Refusing to export a path outside the recordings vault');
   }
 
-  const inputs: string[] = [];
+  const inputs: { path: string; role: 'screen' | 'camera' | 'audio' }[] = [];
   let durationMs = 0;
   for (const trackId of await trackDirs(recordingDir)) {
     const finalized = await finalizeTrack(join(recordingDir, trackId));
     if (finalized) {
-      inputs.push(finalized.path);
+      // Track subdir names come from the recorder's TrackConfig ids.
+      const role = trackId === 'camera' ? 'camera' : trackId === 'screen' ? 'screen' : 'audio';
+      inputs.push({ path: finalized.path, role });
       durationMs = Math.max(durationMs, finalized.durationMs);
     }
   }

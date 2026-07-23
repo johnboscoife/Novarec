@@ -1,5 +1,5 @@
 import type { ExportSettings } from '@novarec/shared';
-import { buildFfmpegArgs } from './ffmpeg-command.js';
+import { buildFfmpegArgs, type FfmpegInput } from './ffmpeg-command.js';
 import { runFfmpeg } from './ffmpeg-runner.js';
 
 /**
@@ -10,7 +10,7 @@ import { runFfmpeg } from './ffmpeg-runner.js';
  */
 export interface ExportRecordingOptions {
   ffmpegPath: string;
-  inputs: readonly string[];
+  inputs: readonly FfmpegInput[];
   settings: ExportSettings;
   outputPath: string;
   onProgress?: (elapsedMs: number) => void;
@@ -18,7 +18,7 @@ export interface ExportRecordingOptions {
 }
 
 export async function exportRecording(options: ExportRecordingOptions): Promise<string> {
-  const inputs = options.inputs.map((path) => ({ path }));
+  const inputs = options.inputs;
   const runOpts = {
     ...(options.onProgress ? { onProgress: options.onProgress } : {}),
     ...(options.signal ? { signal: options.signal } : {}),
