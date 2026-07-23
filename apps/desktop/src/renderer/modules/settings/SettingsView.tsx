@@ -76,6 +76,12 @@ export function SettingsView(): ReactElement {
             checked={current.retainSetup}
             onChange={(v) => update({ retainSetup: v })}
           />
+          <ToggleRow
+            label="Confirm before quitting"
+            hint="Ask for confirmation when you close NovaRec (always asks while a recording is in progress)."
+            checked={current.confirmOnExit}
+            onChange={(v) => update({ confirmOnExit: v })}
+          />
         </Panel>
 
         <Panel title="Privacy">

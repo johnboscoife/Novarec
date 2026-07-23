@@ -30,6 +30,8 @@ export const AppSettingsSchema = z.object({
   // Default export format (an EXPORT_PRESETS id) used for auto-export and as the
   // initial choice in the export picker.
   exportPreset: z.string().default('youtube'),
+  // Ask for confirmation when closing NovaRec.
+  confirmOnExit: z.boolean().default(true),
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 
@@ -48,4 +50,5 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   exportFolder: null,
   deleteRawAfterExport: false,
   exportPreset: 'youtube',
+  confirmOnExit: true,
 };

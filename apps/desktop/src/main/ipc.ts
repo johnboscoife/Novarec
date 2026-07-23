@@ -27,6 +27,7 @@ import {
   dispatchCommand,
   pushControlState,
 } from './overlays/controls-window.js';
+import { setConfirmOnExit, setRecordingActive } from './app-state.js';
 import { loadCaptureSettings, saveCaptureSettings } from './settings-store.js';
 import {
   deleteRawRecording,
@@ -148,6 +149,7 @@ export function registerIpcHandlers(): void {
     return { ok: true as const };
   });
   handleChannel('controls:state', (req) => {
+    setRecordingActive(req.state !== 'idle');
     pushControlState(req);
     return { ok: true as const };
   });
@@ -210,7 +212,11 @@ export function registerIpcHandlers(): void {
 
   // --- App settings (Phase 10) ---
   handleChannel('settings:get', () => loadAppSettings());
-  handleChannel('settings:save', (req) => saveAppSettings(req));
+  handleChannel('settings:save', async (req) => {
+    const saved = await saveAppSettings(req);
+    setConfirmOnExit(saved.confirmOnExit); // keep the sync exit-guard current
+    return saved;
+  });
 
   // --- Google account (Meet) ---
   handleChannel('google:signIn', () => googleSignIn());

@@ -1,12 +1,31 @@
 import { join } from 'node:path';
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, dialog, shell } from 'electron';
 import { registerIpcHandlers } from './ipc.js';
 import { installContentSecurityPolicy } from './security.js';
 import { registerHotkeys, unregisterHotkeys } from './hotkeys.js';
 import { installDisplayMediaHandler } from './capture/display-media.js';
-import { setHostWindow } from './overlays/controls-window.js';
+import { setHostWindow, hideControls } from './overlays/controls-window.js';
+import { hideWebcam } from './overlays/webcam-window.js';
+import { isRecordingActive, setConfirmOnExit, shouldConfirmExit } from './app-state.js';
+import { loadAppSettings, saveAppSettings } from './app-settings-store.js';
 
 const isDev = !app.isPackaged;
+
+// Set once app.quit() has begun (menu quit, app.close() in tests, OS shutdown),
+// so the window 'close' handler doesn't re-prompt on a programmatic quit.
+let isQuitting = false;
+
+/** Kill the floating overlays (and their camera streams) on the way out. */
+function closeOverlays(): void {
+  hideWebcam();
+  hideControls();
+}
+
+async function persistNoConfirmOnExit(): Promise<void> {
+  const settings = await loadAppSettings();
+  await saveAppSettings({ ...settings, confirmOnExit: false });
+  setConfirmOnExit(false);
+}
 
 function createMainWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -30,6 +49,44 @@ function createMainWindow(): BrowserWindow {
   });
 
   window.on('ready-to-show', () => window.show());
+
+  // Exit-intent confirmation. Skipped for programmatic quits (tests, OS
+  // shutdown) so nothing hangs waiting on a dialog. Always tears down the
+  // floating overlays so the webcam preview can't outlive the app.
+  let allowClose = false;
+  window.on('close', (event) => {
+    if (allowClose || isQuitting) {
+      closeOverlays();
+      return;
+    }
+    const recording = isRecordingActive();
+    if (!recording && !shouldConfirmExit()) {
+      closeOverlays();
+      return;
+    }
+    event.preventDefault();
+    void dialog
+      .showMessageBox(window, {
+        type: recording ? 'warning' : 'question',
+        buttons: ['Cancel', 'Quit'],
+        defaultId: 1,
+        cancelId: 0,
+        noLink: true,
+        title: 'Quit NovaRec?',
+        message: recording ? 'A recording is in progress. Quit anyway?' : 'Quit NovaRec?',
+        detail: recording
+          ? 'Your captured footage is already saved and can be recovered, but quitting ends the recording.'
+          : 'Are you sure you want to quit NovaRec?',
+        ...(recording ? {} : { checkboxLabel: "Don't ask me again", checkboxChecked: false }),
+      })
+      .then((result) => {
+        if (result.response !== 1) return; // Cancel
+        if (result.checkboxChecked) void persistNoConfirmOnExit();
+        allowClose = true;
+        closeOverlays();
+        window.close();
+      });
+  });
 
   // Recover from a renderer/GPU crash (e.g. during heavy screen capture) by
   // reloading, instead of leaving a black window.
@@ -63,6 +120,7 @@ app
     installDisplayMediaHandler(); // modern getDisplayMedia screen capture
     registerIpcHandlers();
     registerHotkeys(); // system-wide, works even when NovaRec is unfocused
+    void loadAppSettings().then((s) => setConfirmOnExit(s.confirmOnExit)); // seed exit guard
     setHostWindow(createMainWindow());
 
     app.on('activate', () => {
@@ -78,7 +136,15 @@ app.on('child-process-gone', (_event, details) => {
   console.error(`Child process gone: ${details.type} (${details.reason})`);
 });
 
-app.on('will-quit', () => unregisterHotkeys());
+app.on('before-quit', () => {
+  isQuitting = true; // don't re-prompt when quitting programmatically
+  closeOverlays();
+});
+
+app.on('will-quit', () => {
+  unregisterHotkeys();
+  closeOverlays();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
