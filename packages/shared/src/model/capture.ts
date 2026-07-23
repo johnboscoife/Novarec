@@ -31,6 +31,27 @@ export type TargetFps = z.infer<typeof TargetFpsSchema>;
 export const WebcamShapeSchema = z.enum(['circle', 'rounded', 'square']);
 export type WebcamShape = z.infer<typeof WebcamShapeSchema>;
 
+/** Commands the floating recording control can issue. `dismiss` is main-only. */
+export const ControlActionSchema = z.enum([
+  'pause',
+  'resume',
+  'stop',
+  'dismiss',
+  'muteMic',
+  'toggleWebcam',
+]);
+export type ControlAction = z.infer<typeof ControlActionSchema>;
+
+/** Recording state the main window publishes to the floating control. */
+export const RecordControlStateSchema = z.object({
+  state: z.enum(['idle', 'recording', 'paused']),
+  elapsedMs: z.number().nonnegative(),
+  micMuted: z.boolean(),
+  micAvailable: z.boolean(),
+  webcamOn: z.boolean(),
+});
+export type RecordControlState = z.infer<typeof RecordControlStateSchema>;
+
 export const ResolutionSchema = z.object({
   width: z.number().positive(),
   height: z.number().positive(),

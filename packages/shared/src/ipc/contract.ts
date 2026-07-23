@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import {
   CaptureSettingsSchema,
+  ControlActionSchema,
   DisplayInfoSchema,
+  RecordControlStateSchema,
   SavedRegionSchema,
   SourceListSchema,
   WebcamShapeSchema,
@@ -121,6 +123,13 @@ export const ipcContract = {
     response: Ok,
   },
   'webcam:hide': { request: z.void(), response: Ok },
+
+  // Floating recording control window. The main window shows/hides it and
+  // publishes state; the control sends commands back (routed to the main window).
+  'controls:show': { request: z.void(), response: Ok },
+  'controls:hide': { request: z.void(), response: Ok },
+  'controls:command': { request: z.object({ action: ControlActionSchema }), response: Ok },
+  'controls:state': { request: RecordControlStateSchema, response: Ok },
 
   // --- Recording (Phase 2/3): renderer streams encoded data; main persists it.
   // Multi-track: each enabled track is an independent segment writer. ---

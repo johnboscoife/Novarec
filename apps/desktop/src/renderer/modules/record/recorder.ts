@@ -118,6 +118,13 @@ class TrackRecorder {
     this.recorder?.resume();
   }
 
+  /** Mute/unmute by toggling the stream's audio tracks (keeps timing intact). */
+  setStreamEnabled(enabled: boolean): void {
+    this.stream.getAudioTracks().forEach((track) => {
+      track.enabled = enabled;
+    });
+  }
+
   async stop(): Promise<void> {
     const recorder = this.recorder;
     if (recorder) {
@@ -134,6 +141,7 @@ class TrackRecorder {
 export class MultiTrackRecorder {
   private recordingId: string | null = null;
   private tracks: TrackRecorder[] = [];
+  private micRecorder: TrackRecorder | null = null;
   private perTrack = new Map<string, number>();
 
   constructor(private readonly callbacks: RecorderCallbacks) {}
@@ -165,6 +173,7 @@ export class MultiTrackRecorder {
         );
         recorder.start();
         this.tracks.push(recorder);
+        if (config.kind === 'microphone') this.micRecorder = recorder;
       } catch (error) {
         const reason = error instanceof Error ? error.message : 'unknown error';
         this.callbacks.onError(`Couldn't start ${config.label}: ${reason}`);
@@ -176,6 +185,11 @@ export class MultiTrackRecorder {
       this.recordingId = null;
       throw new Error('No tracks could be started — check permissions and try again');
     }
+  }
+
+  /** Mute or unmute the microphone track mid-recording (no-op if none). */
+  setMicMuted(muted: boolean): void {
+    this.micRecorder?.setStreamEnabled(!muted);
   }
 
   async pause(): Promise<void> {
@@ -209,6 +223,7 @@ export class MultiTrackRecorder {
       result = { dir: summary.dir };
     }
     this.tracks = [];
+    this.micRecorder = null;
     this.recordingId = null;
     this.perTrack.clear();
     return result;

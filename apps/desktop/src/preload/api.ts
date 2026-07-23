@@ -1,10 +1,12 @@
 import type {
   AppInfo,
   CaptureSettings,
+  ControlAction,
   DisplayInfo,
   HotkeyAction,
   IpcRequest,
   IpcResponse,
+  RecordControlState,
   SavedRegion,
   SourceList,
   WebcamShape,
@@ -78,4 +80,14 @@ export interface NovaRecApi {
 
   // --- Global hotkeys (Phase 5) --- returns an unsubscribe function.
   onHotkey(callback: (action: HotkeyAction) => void): () => void;
+
+  // --- Floating recording control ---
+  showControls(): Promise<IpcResponse<'controls:show'>>;
+  hideControls(): Promise<IpcResponse<'controls:hide'>>;
+  sendControlCommand(
+    payload: IpcRequest<'controls:command'>,
+  ): Promise<IpcResponse<'controls:command'>>;
+  publishRecordState(payload: IpcRequest<'controls:state'>): Promise<IpcResponse<'controls:state'>>;
+  onControlsAction(callback: (action: ControlAction) => void): () => void;
+  onControlsState(callback: (state: RecordControlState) => void): () => void;
 }

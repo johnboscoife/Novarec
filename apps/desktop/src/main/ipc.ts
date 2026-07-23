@@ -21,6 +21,12 @@ import { beginRegionSelect } from './capture/region-window.js';
 import { setPendingCaptureSource } from './capture/display-media.js';
 import { startProbeMotion, stopProbeMotion } from './capture/probe-motion.js';
 import { showWebcam, hideWebcam } from './overlays/webcam-window.js';
+import {
+  showControls,
+  hideControls,
+  dispatchCommand,
+  pushControlState,
+} from './overlays/controls-window.js';
 import { loadCaptureSettings, saveCaptureSettings } from './settings-store.js';
 import {
   listOrphans,
@@ -123,6 +129,23 @@ export function registerIpcHandlers(): void {
   });
   handleChannel('webcam:hide', () => {
     hideWebcam();
+    return { ok: true as const };
+  });
+
+  handleChannel('controls:show', () => {
+    showControls();
+    return { ok: true as const };
+  });
+  handleChannel('controls:hide', () => {
+    hideControls();
+    return { ok: true as const };
+  });
+  handleChannel('controls:command', (req) => {
+    dispatchCommand(req.action);
+    return { ok: true as const };
+  });
+  handleChannel('controls:state', (req) => {
+    pushControlState(req);
     return { ok: true as const };
   });
 

@@ -4,10 +4,11 @@ import { registerIpcHandlers } from './ipc.js';
 import { installContentSecurityPolicy } from './security.js';
 import { registerHotkeys, unregisterHotkeys } from './hotkeys.js';
 import { installDisplayMediaHandler } from './capture/display-media.js';
+import { setHostWindow } from './overlays/controls-window.js';
 
 const isDev = !app.isPackaged;
 
-function createMainWindow(): void {
+function createMainWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -52,6 +53,7 @@ function createMainWindow(): void {
   } else {
     void window.loadFile(join(__dirname, '../renderer/index.html'));
   }
+  return window;
 }
 
 app
@@ -61,10 +63,10 @@ app
     installDisplayMediaHandler(); // modern getDisplayMedia screen capture
     registerIpcHandlers();
     registerHotkeys(); // system-wide, works even when NovaRec is unfocused
-    createMainWindow();
+    setHostWindow(createMainWindow());
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+      if (BrowserWindow.getAllWindows().length === 0) setHostWindow(createMainWindow());
     });
   })
   .catch((error: unknown) => {

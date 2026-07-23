@@ -14,6 +14,7 @@ export interface RecorderControls {
   pause(): Promise<void>;
   resume(): Promise<void>;
   stop(): Promise<void>;
+  setMicMuted(muted: boolean): void;
 }
 
 export function useRecorder(): RecorderControls {
@@ -77,5 +78,20 @@ export function useRecorder(): RecorderControls {
     if (result) setLastRecordingDir(result.dir);
   }, []);
 
-  return { state, elapsedMs, segmentCount, error, lastRecordingDir, start, pause, resume, stop };
+  const setMicMuted = useCallback((muted: boolean) => {
+    recorderRef.current?.setMicMuted(muted);
+  }, []);
+
+  return {
+    state,
+    elapsedMs,
+    segmentCount,
+    error,
+    lastRecordingDir,
+    start,
+    pause,
+    resume,
+    stop,
+    setMicMuted,
+  };
 }

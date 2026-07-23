@@ -4,6 +4,7 @@ import {
   SUPPORTED_TARGET_FPS,
   countdownSequence,
   type CaptureSource,
+  type ControlAction,
   type HotkeyAction,
   type SavedRegion,
   type TargetFps,
@@ -54,6 +55,7 @@ export function RecordView(): ReactElement {
   const [micDeviceId, setMicDeviceId] = useState<string | null>(null);
   const [webcamShape, setWebcamShape] = useState<WebcamShape>('circle');
   const [webcamSize, setWebcamSize] = useState(240);
+  const [micMuted, setMicMuted] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
 
   // Export is an app-wide background job (keeps running across view switches).
@@ -247,6 +249,42 @@ export function RecordView(): ReactElement {
 
   // Always tear the overlay down when leaving Record.
   useEffect(() => () => void window.novarec.hideWebcam(), []);
+
+  // Floating recording control: show it while recording, publish state to it,
+  // and act on the commands it sends back.
+  useEffect(() => {
+    if (recorder.state === 'idle') {
+      void window.novarec.hideControls();
+      if (micMuted) setMicMuted(false);
+    } else {
+      void window.novarec.showControls();
+    }
+  }, [recorder.state, micMuted]);
+
+  useEffect(() => {
+    void window.novarec.publishRecordState({
+      state: recorder.state,
+      elapsedMs: recorder.elapsedMs,
+      micMuted,
+      micAvailable: micOn,
+      webcamOn: cameraOn,
+    });
+  }, [recorder.state, recorder.elapsedMs, micMuted, micOn, cameraOn]);
+
+  const controlHandler = useRef<(action: ControlAction) => void>(() => undefined);
+  controlHandler.current = (action) => {
+    if (action === 'pause') void recorder.pause();
+    else if (action === 'resume') void recorder.resume();
+    else if (action === 'stop') void recorder.stop();
+    else if (action === 'muteMic') {
+      const next = !micMuted;
+      setMicMuted(next);
+      recorder.setMicMuted(next);
+    } else if (action === 'toggleWebcam') {
+      setCameraOn((on) => !on);
+    }
+  };
+  useEffect(() => window.novarec.onControlsAction((action) => controlHandler.current(action)), []);
 
   // Global hotkeys drive the recording lifecycle even when the app is unfocused.
   const hotkeyHandler = useRef<(action: HotkeyAction) => void>(() => undefined);

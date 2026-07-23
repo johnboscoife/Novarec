@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
-import type { HotkeyAction, WebcamShape } from '@novarec/shared';
+import type { ControlAction, HotkeyAction, RecordControlState, WebcamShape } from '@novarec/shared';
 import type { NovaRecApi } from './api.js';
 
 const api: NovaRecApi = {
@@ -57,6 +57,22 @@ const api: NovaRecApi = {
     const listener = (_event: IpcRendererEvent, action: HotkeyAction) => callback(action);
     ipcRenderer.on('hotkey:action', listener);
     return () => ipcRenderer.removeListener('hotkey:action', listener);
+  },
+
+  // --- Floating recording control ---
+  showControls: () => ipcRenderer.invoke('controls:show'),
+  hideControls: () => ipcRenderer.invoke('controls:hide'),
+  sendControlCommand: (payload) => ipcRenderer.invoke('controls:command', payload),
+  publishRecordState: (payload) => ipcRenderer.invoke('controls:state', payload),
+  onControlsAction: (callback) => {
+    const listener = (_event: IpcRendererEvent, action: ControlAction) => callback(action);
+    ipcRenderer.on('controls:action', listener);
+    return () => ipcRenderer.removeListener('controls:action', listener);
+  },
+  onControlsState: (callback) => {
+    const listener = (_event: IpcRendererEvent, state: RecordControlState) => callback(state);
+    ipcRenderer.on('controls:state-update', listener);
+    return () => ipcRenderer.removeListener('controls:state-update', listener);
   },
 };
 
