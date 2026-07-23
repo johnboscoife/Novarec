@@ -395,7 +395,7 @@ export function RecordView(): ReactElement {
                 ? 'Exporting…'
                 : exportedPath
                   ? 'Exported ✓ · Export again'
-                  : 'Export (YouTube 1080p)'}
+                  : 'Export video · 1080p'}
             </button>
           </div>
           {exporting && exportProgress !== null && (
