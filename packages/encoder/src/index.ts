@@ -12,3 +12,5 @@ export * from './recovery.js';
 export * from './ffmpeg-command.js';
 export * from './export-queue.js';
 export * from './adaptive-bitrate.js';
+export * from './ffmpeg-runner.js';
+export * from './export-recording.js';

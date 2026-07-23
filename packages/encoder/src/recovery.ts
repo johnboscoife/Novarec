@@ -51,6 +51,28 @@ export async function scanForOrphans(
  * init segment with every sealed fragment (a valid fragmented MP4). The torn,
  * unsealed trailing segment is dropped. Marks the manifest `recovered`.
  */
+/**
+ * Concatenate a track's init + sealed fMP4 fragments into a single playable
+ * `track.mp4` (the same byte-concat as recovery, without marking recovered).
+ * Used to finalize each track before export. Returns null if nothing sealed.
+ */
+export async function finalizeTrack(
+  dir: string,
+  disk: DiskIO = nodeDisk,
+): Promise<{ path: string; durationMs: number } | null> {
+  const state = reduceEvents(parseEvents(await disk.readText(join(dir, MANIFEST_FILENAME))));
+  const sealed = sealedSegments(state);
+  if (sealed.length === 0) return null;
+
+  const parts: Buffer[] = [];
+  if (state.initSegment) parts.push(await disk.readFile(join(dir, state.initSegment)));
+  for (const seg of sealed) parts.push(await disk.readFile(join(dir, seg.path)));
+
+  const path = join(dir, 'track.mp4');
+  await disk.writeAndSync(path, Buffer.concat(parts));
+  return { path, durationMs: totalDurationMs(state) };
+}
+
 export async function recoverRecording(
   dir: string,
   disk: DiskIO = nodeDisk,

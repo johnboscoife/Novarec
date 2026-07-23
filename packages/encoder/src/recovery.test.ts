@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SegmentWriter } from './segment-writer.js';
-import { recoverRecording, scanForOrphans } from './recovery.js';
+import { finalizeTrack, recoverRecording, scanForOrphans } from './recovery.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const createdAt = '2026-07-22T00:00:00.000Z';
@@ -99,6 +99,27 @@ describe('crash recovery', () => {
     if (!orphan) throw new Error('expected one orphan');
     const result = await recoverRecording(orphan.dir);
     expect(result.segmentCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('finalizes a cleanly-stopped track into one playable file', async () => {
+    const vault = await tempVault();
+    const dir = join(vault, 'final');
+    const writer = new SegmentWriter({
+      dir,
+      recordingId: 'final',
+      createdAt,
+      targetDurationMs: 100,
+    });
+    await writer.start(new Uint8Array([1, 2]));
+    for (let i = 0; i < 6; i += 1) await writer.writeFragment(frag(50), 40);
+    await writer.stop(1000);
+
+    const result = await finalizeTrack(dir);
+    if (!result) throw new Error('expected a finalized track');
+    const sealedBytes = writer.state.segments
+      .filter((s) => s.sealed)
+      .reduce((sum, s) => sum + s.bytes, 0);
+    expect((await readFile(result.path)).length).toBe(2 + sealedBytes);
   });
 
   it('recovers data from a hard-killed process', { timeout: 20_000 }, async () => {
