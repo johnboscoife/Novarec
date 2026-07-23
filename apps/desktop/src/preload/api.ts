@@ -87,6 +87,7 @@ export interface NovaRecApi {
   googleSignOut(): Promise<IpcResponse<'google:signOut'>>;
   googleGetProfile(): Promise<IpcResponse<'google:getProfile'>>;
   googleCreateMeet(): Promise<IpcResponse<'google:createMeet'>>;
+  meetToken(payload: IpcRequest<'meet:token'>): Promise<IpcResponse<'meet:token'>>;
 
   // --- Global hotkeys (Phase 5) --- returns an unsubscribe function.
   onHotkey(callback: (action: HotkeyAction) => void): () => void;

@@ -51,6 +51,7 @@ const api: NovaRecApi = {
   googleSignOut: () => ipcRenderer.invoke('google:signOut'),
   googleGetProfile: () => ipcRenderer.invoke('google:getProfile'),
   googleCreateMeet: () => ipcRenderer.invoke('google:createMeet'),
+  meetToken: (payload) => ipcRenderer.invoke('meet:token', payload),
 
   onExportProgress: (callback) => {
     const listener = (_event: IpcRendererEvent, progress: { elapsedMs: number; totalMs: number }) =>

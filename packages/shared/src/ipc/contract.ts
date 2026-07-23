@@ -16,7 +16,7 @@ import {
 } from '../model/recording-io.js';
 import { ExportHistoryEntrySchema, ExportSettingsSchema } from '../model/export.js';
 import { AppSettingsSchema } from '../model/settings.js';
-import { GoogleProfileSchema } from '../model/meet.js';
+import { GoogleProfileSchema, TokenRequestSchema, TokenResponseSchema } from '../model/meet.js';
 
 const Bytes = z.instanceof(Uint8Array);
 const Ok = z.object({ ok: z.literal(true) });
@@ -199,6 +199,10 @@ export const ipcContract = {
   'google:signOut': { request: z.void(), response: Ok },
   'google:getProfile': { request: z.void(), response: GoogleProfileSchema.nullable() },
   'google:createMeet': { request: z.void(), response: z.object({ url: z.string() }) },
+
+  // --- NovaRec meetings (LiveKit) --- mint a room token locally from the
+  // user's LiveKit credentials in Settings.
+  'meet:token': { request: TokenRequestSchema, response: TokenResponseSchema },
 } as const;
 
 export type IpcContract = typeof ipcContract;

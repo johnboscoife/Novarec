@@ -1,9 +1,10 @@
-import { useState, type ReactElement, type ReactNode } from 'react';
+import { useState, type ReactElement } from 'react';
 import { NEW_GOOGLE_MEET_URL, normalizeMeetUrl } from '@novarec/shared';
 import { useAppStore } from '../../store.js';
 import { useAppSettings } from '../settings/useAppSettings.js';
 import { useGoogleProfile, useGoogleSignIn, useGoogleSignOut } from './useGoogleAuth.js';
 import { GOOGLE_MEET_ENABLED } from '../../featureFlags.js';
+import { NovaMeet } from './NovaMeet.js';
 
 type MeetPlatform = 'google' | 'novarec';
 
@@ -39,7 +40,7 @@ export function MeetView(): ReactElement {
 
       {GOOGLE_MEET_ENABLED && platform === null && <PlatformChooser onChoose={setPlatform} />}
       {GOOGLE_MEET_ENABLED && platform === 'google' && <GoogleMeetPanel />}
-      {platform === 'novarec' && <NovaRecMeetingPanel />}
+      {platform === 'novarec' && <NovaMeet />}
     </section>
   );
 }
@@ -303,52 +304,6 @@ function GoogleAccountBar({
         </button>
       </div>
       {signInError && <p className="mt-2 text-sm text-red-400">{signInError}</p>}
-    </div>
-  );
-}
-
-function NovaRecMeetingPanel(): ReactElement {
-  return (
-    <div className="max-w-2xl rounded-2xl border border-app bg-surface p-6">
-      <h2 className="text-lg font-semibold">NovaRec Meeting — in development</h2>
-      <p className="mt-2 text-sm leading-relaxed text-muted-app">
-        NovaRec&apos;s own meeting hosts a private, end-to-end video call on the same capture
-        pipeline as Record: every participant is a separate track, recording is local-first, and
-        consent is enforced before capture can start. The signaling, token, and consent engine is
-        already built and tested; the live in-app call experience is the next milestone.
-      </p>
-      <div className="mt-4 space-y-2">
-        <Feature done>Per-participant consent ledger (recording blocked until all agree)</Feature>
-        <Feature done>Room tokens &amp; roles (host / participant)</Feature>
-        <Feature>Live audio/video call surface</Feature>
-        <Feature>Per-participant local track recording</Feature>
-      </div>
-      <p className="mt-5 text-sm text-muted-app">
-        In the meantime, you can record any meeting (Zoom, Teams, Meet in your browser, …) from the{' '}
-        <span className="text-app2">Record</span> tab.
-      </p>
-    </div>
-  );
-}
-
-function Feature({
-  children,
-  done = false,
-}: {
-  children: ReactNode;
-  done?: boolean;
-}): ReactElement {
-  return (
-    <div className="flex items-center gap-2 text-sm">
-      <span
-        className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] ${
-          done ? 'bg-emerald-500/20 text-emerald-400' : 'bg-surface2 text-dim-app'
-        }`}
-        aria-hidden
-      >
-        {done ? '✓' : '•'}
-      </span>
-      <span className={done ? 'text-app2' : 'text-muted-app'}>{children}</span>
     </div>
   );
 }

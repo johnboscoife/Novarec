@@ -32,6 +32,12 @@ export const AppSettingsSchema = z.object({
   exportPreset: z.string().default('youtube'),
   // Ask for confirmation when closing NovaRec.
   confirmOnExit: z.boolean().default(true),
+  // LiveKit server for NovaRec meetings (URL + API key/secret from LiveKit
+  // Cloud or a self-hosted server). Tokens are minted locally in the main
+  // process; nothing is sent anywhere until the user joins a room.
+  livekitUrl: z.string().nullable().default(null),
+  livekitApiKey: z.string().nullable().default(null),
+  livekitApiSecret: z.string().nullable().default(null),
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 
@@ -51,4 +57,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   deleteRawAfterExport: false,
   exportPreset: 'youtube',
   confirmOnExit: true,
+  livekitUrl: null,
+  livekitApiKey: null,
+  livekitApiSecret: null,
 };

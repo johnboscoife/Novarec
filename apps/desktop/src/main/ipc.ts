@@ -28,6 +28,7 @@ import {
   pushControlState,
 } from './overlays/controls-window.js';
 import { setConfirmOnExit, setRecordingActive } from './app-state.js';
+import { buildAccessToken, grantForRoom } from './meet/livekit-token.js';
 import { loadCaptureSettings, saveCaptureSettings } from './settings-store.js';
 import {
   deleteRawRecording,
@@ -226,4 +227,24 @@ export function registerIpcHandlers(): void {
   });
   handleChannel('google:getProfile', () => googleGetProfile());
   handleChannel('google:createMeet', async () => ({ url: await googleCreateMeet() }));
+
+  // --- NovaRec meetings (LiveKit) ---
+  handleChannel('meet:token', async (req) => {
+    const settings = await loadAppSettings();
+    if (!settings.livekitUrl || !settings.livekitApiKey || !settings.livekitApiSecret) {
+      throw new Error('Add your LiveKit URL, API key and secret in Settings → Meetings first.');
+    }
+    const token = buildAccessToken(
+      {
+        apiKey: settings.livekitApiKey,
+        apiSecret: settings.livekitApiSecret,
+        identity: req.identity,
+        ttlSeconds: 60 * 60,
+        grant: grantForRoom(req.room),
+        ...(req.name ? { name: req.name } : {}),
+      },
+      Math.floor(Date.now() / 1000),
+    );
+    return { token, room: req.room, url: settings.livekitUrl };
+  });
 }

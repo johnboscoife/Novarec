@@ -12,7 +12,9 @@ const PROD_CSP = [
   "img-src 'self' data: blob:",
   "media-src 'self' blob:",
   "font-src 'self' data:",
-  "connect-src 'self'",
+  // https:/wss: allow the user's LiveKit server (meetings) to be reached; all
+  // other fetch/socket targets stay blocked by default-src.
+  "connect-src 'self' https: wss:",
   "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'none'",
@@ -26,7 +28,7 @@ const DEV_CSP = [
   "img-src 'self' data: blob:",
   "media-src 'self' blob:",
   "font-src 'self' data:",
-  "connect-src 'self' http://localhost:* ws://localhost:*",
+  "connect-src 'self' http://localhost:* ws://localhost:* https: wss:",
   "worker-src 'self' blob:",
   "object-src 'none'",
 ].join('; ');

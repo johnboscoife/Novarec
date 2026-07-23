@@ -109,6 +109,8 @@ export function SettingsView(): ReactElement {
 
         {GOOGLE_MEET_ENABLED && <GoogleAccountPanel current={current} onSave={update} />}
 
+        <MeetingsPanel current={current} onSave={update} />
+
         <Panel title="Global shortcuts">
           <ul className="space-y-1.5 text-sm">
             {DEFAULT_HOTKEYS.map((binding) => (
@@ -199,6 +201,71 @@ function GoogleAccountPanel({
             onChange={(e) => setClientSecret(e.target.value)}
             onBlur={() => onSave({ googleClientSecret: clientSecret.trim() || null })}
             placeholder="GOCSPX-…"
+            spellCheck={false}
+            className="w-full rounded-md bg-surface2 px-3 py-2 text-sm text-app placeholder:text-dim-app"
+          />
+        </label>
+      </div>
+    </Panel>
+  );
+}
+
+function MeetingsPanel({
+  current,
+  onSave,
+}: {
+  current: AppSettings;
+  onSave: (patch: Partial<AppSettings>) => void;
+}): ReactElement {
+  const [url, setUrl] = useState(current.livekitUrl ?? '');
+  const [key, setKey] = useState(current.livekitApiKey ?? '');
+  const [secret, setSecret] = useState(current.livekitApiSecret ?? '');
+
+  return (
+    <Panel title="Meetings (LiveKit)">
+      <p className="text-xs leading-relaxed text-muted-app">
+        NovaRec meetings run on LiveKit. Create a free project at{' '}
+        <button
+          type="button"
+          onClick={() => void window.novarec.openExternal({ url: 'https://cloud.livekit.io' })}
+          className="text-blue-400 hover:underline"
+        >
+          cloud.livekit.io
+        </button>{' '}
+        (or self-host), then paste the WebSocket URL and API key/secret here. Tokens are minted
+        locally on your machine.
+      </p>
+      <div className="mt-3 space-y-3">
+        <label className="block">
+          <span className="mb-1 block text-sm text-app2">Server URL</span>
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onBlur={() => onSave({ livekitUrl: url.trim() || null })}
+            placeholder="wss://your-project.livekit.cloud"
+            spellCheck={false}
+            className="w-full rounded-md bg-surface2 px-3 py-2 text-sm text-app placeholder:text-dim-app"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-sm text-app2">API key</span>
+          <input
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            onBlur={() => onSave({ livekitApiKey: key.trim() || null })}
+            placeholder="API…"
+            spellCheck={false}
+            className="w-full rounded-md bg-surface2 px-3 py-2 text-sm text-app placeholder:text-dim-app"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-sm text-app2">API secret</span>
+          <input
+            type="password"
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+            onBlur={() => onSave({ livekitApiSecret: secret.trim() || null })}
+            placeholder="secret…"
             spellCheck={false}
             className="w-full rounded-md bg-surface2 px-3 py-2 text-sm text-app placeholder:text-dim-app"
           />
