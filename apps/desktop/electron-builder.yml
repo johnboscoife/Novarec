@@ -10,14 +10,18 @@ directories:
   output: release/${version}
 
 # electron-vite emits self-contained bundles into out/; internal source-only
-# workspace packages are bundled in, so no node_modules resolution is needed
-# from the packaged app beyond externalized runtime deps.
+# workspace packages are bundled in. The one external runtime dependency is the
+# bundled static FFmpeg binary used for export.
 files:
   - out/**/*
   - package.json
+  - node_modules/ffmpeg-static/**
   - '!**/{.eslintrc.*,.prettierrc.*,tsconfig*.json,*.map}'
 
 asar: true
+# FFmpeg must live outside the asar so it's an executable file on disk.
+asarUnpack:
+  - node_modules/ffmpeg-static/**
 npmRebuild: false
 
 win:

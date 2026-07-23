@@ -1,8 +1,9 @@
 import { readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { app } from 'electron';
-import { exportRecording, finalizeTrack, resolveFfmpegPath } from '@novarec/encoder';
+import { exportRecording, finalizeTrack } from '@novarec/encoder';
 import type { ExportSettings } from '@novarec/shared';
+import { ffmpegBinaryPath } from '../ffmpeg-path.js';
 
 /**
  * Export a finished recording: finalize each track (concat its sealed fMP4
@@ -44,7 +45,7 @@ export async function runExport(
 
   const outputPath = join(recordingDir, `export.${settings.container}`);
   await exportRecording({
-    ffmpegPath: resolveFfmpegPath(),
+    ffmpegPath: ffmpegBinaryPath(),
     inputs,
     settings,
     outputPath,

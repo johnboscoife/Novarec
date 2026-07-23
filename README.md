@@ -45,8 +45,9 @@ pnpm lint                 # ESLint (no `any`, flat config)
 pnpm --filter @novarec/desktop build   # produce a platform installer
 ```
 
-Requirements: Node ≥ 20.11, pnpm 9, and (for export) FFmpeg on `PATH` or set
-`NOVAREC_FFMPEG`. A static FFmpeg is bundled in packaged builds.
+Requirements: Node ≥ 20.11 and pnpm 9. **FFmpeg is bundled** (via
+`ffmpeg-static`) for both development and packaged builds — no system install
+needed. Override with `NOVAREC_FFMPEG` if you prefer your own binary.
 
 ## Repository layout
 

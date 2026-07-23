@@ -50,7 +50,8 @@
     "onlyBuiltDependencies": [
       "electron",
       "esbuild",
-      "@tailwindcss/oxide"
+      "@tailwindcss/oxide",
+      "ffmpeg-static"
     ]
   }
 }

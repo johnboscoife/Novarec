@@ -19,6 +19,7 @@
     "@novarec/ui": "workspace:*",
     "@tanstack/react-query": "^5.101.4",
     "electron-updater": "^6.8.9",
+    "ffmpeg-static": "^5.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "zod": "^4.4.3",
