@@ -44,6 +44,10 @@ export interface NovaRecApi {
     payload: IpcRequest<'recording:recover'>,
   ): Promise<IpcResponse<'recording:recover'>>;
 
+  // --- Export (Phase 7) ---
+  runExport(payload: IpcRequest<'export:run'>): Promise<IpcResponse<'export:run'>>;
+  revealPath(payload: IpcRequest<'shell:reveal'>): Promise<IpcResponse<'shell:reveal'>>;
+
   // --- Global hotkeys (Phase 5) --- returns an unsubscribe function.
   onHotkey(callback: (action: HotkeyAction) => void): () => void;
 }

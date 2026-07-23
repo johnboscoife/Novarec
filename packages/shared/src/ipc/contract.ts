@@ -11,6 +11,7 @@ import {
   RecordingSummarySchema,
   TrackConfigSchema,
 } from '../model/recording-io.js';
+import { ExportSettingsSchema } from '../model/export.js';
 
 const Bytes = z.instanceof(Uint8Array);
 const Ok = z.object({ ok: z.literal(true) });
@@ -106,6 +107,14 @@ export const ipcContract = {
   'recording:stop': { request: RecordingAt, response: RecordingSummarySchema },
   'recording:listOrphans': { request: z.void(), response: z.array(OrphanedRecordingSchema) },
   'recording:recover': { request: z.object({ dir: z.string() }), response: RecoveryResultSchema },
+
+  // --- Export (Phase 7) --- finalize tracks and run FFmpeg into one file.
+  'export:run': {
+    request: z.object({ recordingDir: z.string(), settings: ExportSettingsSchema }),
+    response: z.object({ outputPath: z.string(), durationMs: z.number().nonnegative() }),
+  },
+  // Reveal a produced file in the OS file manager.
+  'shell:reveal': { request: z.object({ path: z.string() }), response: Ok },
 } as const;
 
 export type IpcContract = typeof ipcContract;

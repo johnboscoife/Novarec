@@ -22,6 +22,9 @@ const api: NovaRecApi = {
   listOrphans: () => ipcRenderer.invoke('recording:listOrphans'),
   recoverRecording: (payload) => ipcRenderer.invoke('recording:recover', payload),
 
+  runExport: (payload) => ipcRenderer.invoke('export:run', payload),
+  revealPath: (payload) => ipcRenderer.invoke('shell:reveal', payload),
+
   onHotkey: (callback) => {
     const listener = (_event: IpcRendererEvent, action: HotkeyAction) => callback(action);
     ipcRenderer.on('hotkey:action', listener);

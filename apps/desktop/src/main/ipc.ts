@@ -1,4 +1,4 @@
-import { app, ipcMain } from 'electron';
+import { app, ipcMain, shell } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
 import {
@@ -29,6 +29,7 @@ import {
   writeFragment,
   writeInit,
 } from './recording/session.js';
+import { runExport } from './recording/export.js';
 
 /** Register an invoke handler that validates the request AND response with Zod. */
 function handleChannel<C extends IpcChannel>(
@@ -115,4 +116,11 @@ export function registerIpcHandlers(): void {
   handleChannel('recording:stop', (req) => stopRecording(req.recordingId, req.atMs));
   handleChannel('recording:listOrphans', () => listOrphans());
   handleChannel('recording:recover', (req) => recover(req.dir));
+
+  // --- Export (Phase 7) ---
+  handleChannel('export:run', (req) => runExport(req.recordingDir, req.settings));
+  handleChannel('shell:reveal', (req) => {
+    shell.showItemInFolder(req.path);
+    return { ok: true as const };
+  });
 }

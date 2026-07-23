@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { sustainVerdict, type SustainVerdict } from '@novarec/capture';
 import {
+  EXPORT_PRESETS,
   SUPPORTED_TARGET_FPS,
   countdownSequence,
   type CaptureSource,
@@ -49,6 +50,9 @@ export function RecordView(): ReactElement {
   const [cameraDeviceId, setCameraDeviceId] = useState<string | null>(null);
   const [micDeviceId, setMicDeviceId] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportedPath, setExportedPath] = useState<string | null>(null);
 
   // Seed local state from persisted settings once loaded.
   useEffect(() => {
@@ -177,6 +181,27 @@ export function RecordView(): ReactElement {
     }, 1000);
   }
 
+  async function exportLastRecording(): Promise<void> {
+    const dir = recorder.lastRecordingDir;
+    const youtube = EXPORT_PRESETS.find((p) => p.id === 'youtube');
+    if (!dir || !youtube) return;
+    setExporting(true);
+    setExportError(null);
+    setExportedPath(null);
+    try {
+      const { outputPath } = await window.novarec.runExport({
+        recordingDir: dir,
+        settings: youtube.settings,
+      });
+      setExportedPath(outputPath);
+      await window.novarec.revealPath({ path: outputPath });
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   // Global hotkeys drive the recording lifecycle even when the app is unfocused.
   const hotkeyHandler = useRef<(action: HotkeyAction) => void>(() => undefined);
   hotkeyHandler.current = (action) => {
@@ -214,6 +239,32 @@ export function RecordView(): ReactElement {
           onStart={beginRecording}
         />
       </div>
+
+      {recorder.state === 'idle' && recorder.lastRecordingDir && (
+        <div className="mb-6 rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Last recording ready</p>
+              <p className="truncate text-xs text-neutral-500">
+                {exportedPath ?? recorder.lastRecordingDir}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={exporting}
+              onClick={() => void exportLastRecording()}
+              className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition enabled:hover:bg-blue-500 disabled:opacity-60"
+            >
+              {exporting
+                ? 'Exporting…'
+                : exportedPath
+                  ? 'Exported ✓ · Export again'
+                  : 'Export (YouTube 1080p)'}
+            </button>
+          </div>
+          {exportError && <p className="mt-2 text-sm text-red-400">{exportError}</p>}
+        </div>
+      )}
 
       <div className="grid flex-1 grid-cols-[1.3fr_1fr] gap-6 overflow-hidden">
         {/* Sources */}

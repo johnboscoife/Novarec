@@ -190,16 +190,19 @@ export class MultiTrackRecorder {
     this.tracks.forEach((t) => t.resume());
   }
 
-  async stop(): Promise<void> {
+  async stop(): Promise<{ dir: string } | null> {
     await Promise.all(this.tracks.map((t) => t.stop()));
+    let result: { dir: string } | null = null;
     if (this.recordingId) {
-      await window.novarec.stopRecording({
+      const summary = await window.novarec.stopRecording({
         recordingId: this.recordingId,
         atMs: performance.now(),
       });
+      result = { dir: summary.dir };
     }
     this.tracks = [];
     this.recordingId = null;
     this.perTrack.clear();
+    return result;
   }
 }

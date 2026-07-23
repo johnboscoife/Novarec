@@ -9,6 +9,7 @@ export interface RecorderControls {
   elapsedMs: number;
   segmentCount: number;
   error: string | null;
+  lastRecordingDir: string | null;
   start(configs: TrackConfig[], targetFps: number): Promise<void>;
   pause(): Promise<void>;
   resume(): Promise<void>;
@@ -21,6 +22,7 @@ export function useRecorder(): RecorderControls {
   const [segmentCount, setSegmentCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [lastRecordingDir, setLastRecordingDir] = useState<string | null>(null);
 
   const startedAt = useRef(0);
   const pausedAt = useRef(0);
@@ -38,6 +40,7 @@ export function useRecorder(): RecorderControls {
     setError(null);
     setSegmentCount(0);
     setElapsedMs(0);
+    setLastRecordingDir(null);
     const recorder = new MultiTrackRecorder({
       onSegmentCount: (n) => setSegmentCount(n),
       onError: (message) => setError(message),
@@ -62,10 +65,11 @@ export function useRecorder(): RecorderControls {
   }, []);
 
   const stop = useCallback(async () => {
-    await recorderRef.current?.stop();
+    const result = await recorderRef.current?.stop();
     recorderRef.current = null;
     setState('idle');
+    if (result) setLastRecordingDir(result.dir);
   }, []);
 
-  return { state, elapsedMs, segmentCount, error, start, pause, resume, stop };
+  return { state, elapsedMs, segmentCount, error, lastRecordingDir, start, pause, resume, stop };
 }
