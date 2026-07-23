@@ -10,7 +10,11 @@ export interface RecorderControls {
   segmentCount: number;
   error: string | null;
   lastRecordingDir: string | null;
-  start(configs: TrackConfig[], targetFps: number): Promise<void>;
+  start(
+    configs: TrackConfig[],
+    targetFps: number,
+    providedStreams?: Record<string, MediaStream>,
+  ): Promise<void>;
   pause(): Promise<void>;
   resume(): Promise<void>;
   stop(): Promise<void>;
@@ -37,27 +41,34 @@ export function useRecorder(): RecorderControls {
     return () => window.clearInterval(id);
   }, [state]);
 
-  const start = useCallback(async (configs: TrackConfig[], targetFps: number) => {
-    setError(null);
-    setSegmentCount(0);
-    setElapsedMs(0);
-    setLastRecordingDir(null);
-    const recorder = new MultiTrackRecorder({
-      onSegmentCount: (n) => setSegmentCount(n),
-      onError: (message) => setError(message),
-    });
-    recorderRef.current = recorder;
-    startedAt.current = performance.now();
-    pausedAccumMs.current = 0;
-    try {
-      await recorder.start(configs, targetFps);
-      setState('recording');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not start recording');
-      recorderRef.current = null;
-      setState('idle');
-    }
-  }, []);
+  const start = useCallback(
+    async (
+      configs: TrackConfig[],
+      targetFps: number,
+      providedStreams?: Record<string, MediaStream>,
+    ) => {
+      setError(null);
+      setSegmentCount(0);
+      setElapsedMs(0);
+      setLastRecordingDir(null);
+      const recorder = new MultiTrackRecorder({
+        onSegmentCount: (n) => setSegmentCount(n),
+        onError: (message) => setError(message),
+      });
+      recorderRef.current = recorder;
+      startedAt.current = performance.now();
+      pausedAccumMs.current = 0;
+      try {
+        await recorder.start(configs, targetFps, providedStreams);
+        setState('recording');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not start recording');
+        recorderRef.current = null;
+        setState('idle');
+      }
+    },
+    [],
+  );
 
   const pause = useCallback(async () => {
     await recorderRef.current?.pause();

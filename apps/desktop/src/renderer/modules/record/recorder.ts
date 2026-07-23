@@ -146,7 +146,11 @@ export class MultiTrackRecorder {
 
   constructor(private readonly callbacks: RecorderCallbacks) {}
 
-  async start(configs: TrackConfig[], targetFps: number): Promise<void> {
+  async start(
+    configs: TrackConfig[],
+    targetFps: number,
+    providedStreams?: Record<string, MediaStream>,
+  ): Promise<void> {
     const enabled = configs.filter((c) => c.enabled);
     if (enabled.length === 0) throw new Error('Enable at least one track to record');
 
@@ -156,9 +160,11 @@ export class MultiTrackRecorder {
 
     // Acquire each track independently — a failure (e.g. system-audio loopback
     // unavailable) skips that track instead of breaking the whole recording.
+    // A caller (Studio) can inject an already-acquired stream by track id.
     for (const config of enabled) {
       try {
-        const stream = await acquireStream(config, targetFps, screenSourceId);
+        const stream =
+          providedStreams?.[config.id] ?? (await acquireStream(config, targetFps, screenSourceId));
         const isVideo = config.kind === 'screen' || config.kind === 'camera';
         const recorder = new TrackRecorder(
           recordingId,
