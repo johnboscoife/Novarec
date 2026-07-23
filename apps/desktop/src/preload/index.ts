@@ -25,6 +25,16 @@ const api: NovaRecApi = {
   runExport: (payload) => ipcRenderer.invoke('export:run', payload),
   revealPath: (payload) => ipcRenderer.invoke('shell:reveal', payload),
 
+  getAppSettings: () => ipcRenderer.invoke('settings:get'),
+  saveAppSettings: (payload) => ipcRenderer.invoke('settings:save', payload),
+
+  onExportProgress: (callback) => {
+    const listener = (_event: IpcRendererEvent, progress: { elapsedMs: number; totalMs: number }) =>
+      callback(progress);
+    ipcRenderer.on('export:progress', listener);
+    return () => ipcRenderer.removeListener('export:progress', listener);
+  },
+
   onHotkey: (callback) => {
     const listener = (_event: IpcRendererEvent, action: HotkeyAction) => callback(action);
     ipcRenderer.on('hotkey:action', listener);

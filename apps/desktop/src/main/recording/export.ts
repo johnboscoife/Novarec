@@ -24,6 +24,7 @@ async function trackDirs(recordingDir: string): Promise<string[]> {
 export async function runExport(
   recordingDir: string,
   settings: ExportSettings,
+  onProgress?: (elapsedMs: number, totalMs: number) => void,
 ): Promise<{ outputPath: string; durationMs: number }> {
   // Security: only export recordings inside our own vault.
   if (!resolve(recordingDir).startsWith(resolve(vault()))) {
@@ -42,6 +43,12 @@ export async function runExport(
   if (inputs.length === 0) throw new Error('Nothing to export — no sealed segments found');
 
   const outputPath = join(recordingDir, `export.${settings.container}`);
-  await exportRecording({ ffmpegPath: resolveFfmpegPath(), inputs, settings, outputPath });
+  await exportRecording({
+    ffmpegPath: resolveFfmpegPath(),
+    inputs,
+    settings,
+    outputPath,
+    ...(onProgress ? { onProgress: (elapsedMs) => onProgress(elapsedMs, durationMs) } : {}),
+  });
   return { outputPath, durationMs };
 }

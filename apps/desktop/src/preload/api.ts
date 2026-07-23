@@ -47,6 +47,13 @@ export interface NovaRecApi {
   // --- Export (Phase 7) ---
   runExport(payload: IpcRequest<'export:run'>): Promise<IpcResponse<'export:run'>>;
   revealPath(payload: IpcRequest<'shell:reveal'>): Promise<IpcResponse<'shell:reveal'>>;
+  onExportProgress(
+    callback: (progress: { elapsedMs: number; totalMs: number }) => void,
+  ): () => void;
+
+  // --- App settings (Phase 10) ---
+  getAppSettings(): Promise<IpcResponse<'settings:get'>>;
+  saveAppSettings(payload: IpcRequest<'settings:save'>): Promise<IpcResponse<'settings:save'>>;
 
   // --- Global hotkeys (Phase 5) --- returns an unsubscribe function.
   onHotkey(callback: (action: HotkeyAction) => void): () => void;

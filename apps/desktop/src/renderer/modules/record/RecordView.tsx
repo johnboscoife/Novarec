@@ -53,6 +53,7 @@ export function RecordView(): ReactElement {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportedPath, setExportedPath] = useState<string | null>(null);
+  const [exportProgress, setExportProgress] = useState<number | null>(null);
 
   // Seed local state from persisted settings once loaded.
   useEffect(() => {
@@ -188,6 +189,10 @@ export function RecordView(): ReactElement {
     setExporting(true);
     setExportError(null);
     setExportedPath(null);
+    setExportProgress(0);
+    const off = window.novarec.onExportProgress(({ elapsedMs, totalMs }) => {
+      setExportProgress(totalMs > 0 ? Math.min(1, elapsedMs / totalMs) : 0);
+    });
     try {
       const { outputPath } = await window.novarec.runExport({
         recordingDir: dir,
@@ -198,7 +203,9 @@ export function RecordView(): ReactElement {
     } catch (err) {
       setExportError(err instanceof Error ? err.message : 'Export failed');
     } finally {
+      off();
       setExporting(false);
+      setExportProgress(null);
     }
   }
 
@@ -262,6 +269,14 @@ export function RecordView(): ReactElement {
                   : 'Export (YouTube 1080p)'}
             </button>
           </div>
+          {exporting && exportProgress !== null && (
+            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-neutral-800">
+              <div
+                className="h-full bg-blue-500 transition-[width]"
+                style={{ width: `${Math.round(exportProgress * 100)}%` }}
+              />
+            </div>
+          )}
           {exportError && <p className="mt-2 text-sm text-red-400">{exportError}</p>}
         </div>
       )}

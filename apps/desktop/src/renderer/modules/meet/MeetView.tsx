@@ -6,8 +6,8 @@ export function MeetView(): ReactElement {
     <Placeholder
       tagline="Meet"
       title="Meetings that record like a studio"
-      description="Multi-party video with per-participant tracks and local-first recording. Built on the same capture pipeline as Record. Arrives in Phase 8."
-      ctaLabel="Start a meeting (Phase 8)"
+      description="Multi-party video with per-participant tracks and local-first recording, built on the same capture pipeline as Record. The signaling and consent engine is ready; the live meeting experience is coming soon."
+      ctaLabel="Coming soon"
     />
   );
 }

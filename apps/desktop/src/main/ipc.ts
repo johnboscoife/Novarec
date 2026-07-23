@@ -30,6 +30,7 @@ import {
   writeInit,
 } from './recording/session.js';
 import { runExport } from './recording/export.js';
+import { loadAppSettings, saveAppSettings } from './app-settings-store.js';
 
 /** Register an invoke handler that validates the request AND response with Zod. */
 function handleChannel<C extends IpcChannel>(
@@ -117,10 +118,20 @@ export function registerIpcHandlers(): void {
   handleChannel('recording:listOrphans', () => listOrphans());
   handleChannel('recording:recover', (req) => recover(req.dir));
 
-  // --- Export (Phase 7) ---
-  handleChannel('export:run', (req) => runExport(req.recordingDir, req.settings));
+  // --- Export (Phase 7) --- manual handler so we can stream progress events.
+  ipcMain.handle('export:run', async (event: IpcMainInvokeEvent, raw: unknown) => {
+    const request = ipcContract['export:run'].request.parse(raw);
+    const result = await runExport(request.recordingDir, request.settings, (elapsedMs, totalMs) => {
+      event.sender.send('export:progress', { elapsedMs, totalMs });
+    });
+    return ipcContract['export:run'].response.parse(result);
+  });
   handleChannel('shell:reveal', (req) => {
     shell.showItemInFolder(req.path);
     return { ok: true as const };
   });
+
+  // --- App settings (Phase 10) ---
+  handleChannel('settings:get', () => loadAppSettings());
+  handleChannel('settings:save', (req) => saveAppSettings(req));
 }
