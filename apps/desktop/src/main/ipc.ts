@@ -18,6 +18,7 @@ import {
 } from '@novarec/shared';
 import { getDisplays, listSources } from './capture/enumerate.js';
 import { beginRegionSelect } from './capture/region-window.js';
+import { setPendingCaptureSource } from './capture/display-media.js';
 import { loadCaptureSettings, saveCaptureSettings } from './settings-store.js';
 import {
   listOrphans,
@@ -95,6 +96,11 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('capture:beginRegionSelect', async () => {
     const region = await beginRegionSelect();
     return region === null ? null : SavedRegionSchema.parse(region);
+  });
+
+  handleChannel('capture:setSource', (req) => {
+    setPendingCaptureSource(req.sourceId, req.audio);
+    return { ok: true as const };
   });
 
   // --- Recording (Phase 2/3) ---

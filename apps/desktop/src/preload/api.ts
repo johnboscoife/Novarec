@@ -25,6 +25,9 @@ export interface NovaRecApi {
   getCaptureSettings(): Promise<CaptureSettings>;
   saveCaptureSettings(settings: CaptureSettings): Promise<CaptureSettings>;
   beginRegionSelect(): Promise<SavedRegion | null>;
+  setCaptureSource(
+    payload: IpcRequest<'capture:setSource'>,
+  ): Promise<IpcResponse<'capture:setSource'>>;
 
   // --- Recording (Phase 2) ---
   startRecording(payload: IpcRequest<'recording:start'>): Promise<IpcResponse<'recording:start'>>;

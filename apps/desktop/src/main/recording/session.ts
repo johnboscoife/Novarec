@@ -168,13 +168,16 @@ export async function listOrphans(): Promise<OrphanedRecording[]> {
     const recDir = join(root, recordingId);
     const trackOrphans = await scanForOrphans(recDir);
     if (trackOrphans.length === 0) continue;
+    const sealedSegmentCount = trackOrphans.reduce((n, t) => n + t.sealedSegmentCount, 0);
+    // Nothing was actually recorded — don't offer to "recover" an empty session.
+    if (sealedSegmentCount === 0) continue;
     const status: RecordingStatus = trackOrphans[0]?.status ?? 'recording';
     result.push({
       dir: recDir,
       recordingId,
       createdAt: trackOrphans[0]?.createdAt ?? '',
       status,
-      sealedSegmentCount: trackOrphans.reduce((n, t) => n + t.sealedSegmentCount, 0),
+      sealedSegmentCount,
       durationMs: trackOrphans.reduce((m, t) => Math.max(m, t.durationMs), 0),
     });
   }

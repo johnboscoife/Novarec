@@ -24,29 +24,22 @@ function pickMime(candidates: string[]): string | null {
   return null;
 }
 
-interface DesktopVideoConstraints {
-  mandatory: {
-    chromeMediaSource: 'desktop';
-    chromeMediaSourceId?: string | undefined;
-    maxFrameRate?: number | undefined;
-  };
-}
-interface DesktopAudioConstraints {
-  mandatory: { chromeMediaSource: 'desktop' };
-}
-
-async function acquireStream(config: TrackConfig, targetFps: number): Promise<MediaStream> {
+/**
+ * Acquire a stream for one track. Screen uses the modern `getDisplayMedia`
+ * (main routes it to the chosen source via `capture:setSource`); camera/mic use
+ * `getUserMedia`; system audio uses a loopback display-media request, keeping
+ * only its audio track.
+ */
+async function acquireStream(
+  config: TrackConfig,
+  targetFps: number,
+  screenSourceId: string | null,
+): Promise<MediaStream> {
   const media = navigator.mediaDevices;
   switch (config.kind) {
     case 'screen': {
-      const video: DesktopVideoConstraints = {
-        mandatory: {
-          chromeMediaSource: 'desktop',
-          chromeMediaSourceId: config.sourceId,
-          maxFrameRate: targetFps,
-        },
-      };
-      return media.getUserMedia({ audio: false, video: video as unknown as MediaTrackConstraints });
+      await window.novarec.setCaptureSource({ sourceId: config.sourceId ?? null, audio: false });
+      return media.getDisplayMedia({ video: { frameRate: targetFps }, audio: false });
     }
     case 'camera':
       return media.getUserMedia({
@@ -57,9 +50,10 @@ async function acquireStream(config: TrackConfig, targetFps: number): Promise<Me
         audio: config.deviceId ? { deviceId: { exact: config.deviceId } } : true,
       });
     case 'systemAudio': {
-      // Windows loopback capture; documented fallback if unsupported.
-      const audio: DesktopAudioConstraints = { mandatory: { chromeMediaSource: 'desktop' } };
-      return media.getUserMedia({ video: false, audio: audio as unknown as MediaTrackConstraints });
+      await window.novarec.setCaptureSource({ sourceId: screenSourceId, audio: true });
+      const combined = await media.getDisplayMedia({ video: true, audio: true });
+      combined.getVideoTracks().forEach((t) => t.stop());
+      return new MediaStream(combined.getAudioTracks());
     }
     default:
       throw new Error(`Unsupported track kind: ${String(config.kind)}`);
@@ -150,12 +144,13 @@ export class MultiTrackRecorder {
 
     const { recordingId } = await window.novarec.startRecording({ tracks: enabled });
     this.recordingId = recordingId;
+    const screenSourceId = enabled.find((c) => c.kind === 'screen')?.sourceId ?? null;
 
     // Acquire each track independently — a failure (e.g. system-audio loopback
     // unavailable) skips that track instead of breaking the whole recording.
     for (const config of enabled) {
       try {
-        const stream = await acquireStream(config, targetFps);
+        const stream = await acquireStream(config, targetFps, screenSourceId);
         const isVideo = config.kind === 'screen' || config.kind === 'camera';
         const recorder = new TrackRecorder(
           recordingId,

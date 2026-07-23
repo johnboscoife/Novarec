@@ -84,6 +84,11 @@ export const ipcContract = {
     request: z.void(),
     response: SavedRegionSchema.nullable(),
   },
+  // Tell main which source the next getDisplayMedia call should return.
+  'capture:setSource': {
+    request: z.object({ sourceId: z.string().nullable(), audio: z.boolean() }),
+    response: Ok,
+  },
 
   // --- Recording (Phase 2/3): renderer streams encoded data; main persists it.
   // Multi-track: each enabled track is an independent segment writer. ---

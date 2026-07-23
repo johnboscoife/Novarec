@@ -3,6 +3,7 @@ import { app, BrowserWindow, shell } from 'electron';
 import { registerIpcHandlers } from './ipc.js';
 import { installContentSecurityPolicy } from './security.js';
 import { registerHotkeys, unregisterHotkeys } from './hotkeys.js';
+import { installDisplayMediaHandler } from './capture/display-media.js';
 
 const isDev = !app.isPackaged;
 
@@ -57,6 +58,7 @@ app
   .whenReady()
   .then(() => {
     installContentSecurityPolicy(isDev);
+    installDisplayMediaHandler(); // modern getDisplayMedia screen capture
     registerIpcHandlers();
     registerHotkeys(); // system-wide, works even when NovaRec is unfocused
     createMainWindow();

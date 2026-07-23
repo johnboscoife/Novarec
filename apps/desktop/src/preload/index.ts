@@ -12,6 +12,7 @@ const api: NovaRecApi = {
   getCaptureSettings: () => ipcRenderer.invoke('capture:getSettings'),
   saveCaptureSettings: (settings) => ipcRenderer.invoke('capture:saveSettings', settings),
   beginRegionSelect: () => ipcRenderer.invoke('capture:beginRegionSelect'),
+  setCaptureSource: (payload) => ipcRenderer.invoke('capture:setSource', payload),
 
   startRecording: (payload) => ipcRenderer.invoke('recording:start', payload),
   writeInit: (payload) => ipcRenderer.invoke('recording:writeInit', payload),

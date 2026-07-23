@@ -16,15 +16,6 @@ export interface ProbeResult {
   timestamps: number[];
 }
 
-/** Electron's desktopCapturer constraints are non-standard (chromeMediaSource). */
-interface DesktopVideoConstraints {
-  mandatory: {
-    chromeMediaSource: 'desktop';
-    chromeMediaSourceId: string;
-    maxFrameRate?: number;
-  };
-}
-
 interface RvfcVideo {
   requestVideoFrameCallback(callback: (now: number) => void): number;
 }
@@ -34,17 +25,10 @@ export async function runSustainProbe(
   targetFps: number,
   durationMs = 3000,
 ): Promise<ProbeResult> {
-  const constraints: DesktopVideoConstraints = {
-    mandatory: {
-      chromeMediaSource: 'desktop',
-      chromeMediaSourceId: sourceId,
-      maxFrameRate: targetFps,
-    },
-  };
-
-  const stream = await navigator.mediaDevices.getUserMedia({
+  await window.novarec.setCaptureSource({ sourceId, audio: false });
+  const stream = await navigator.mediaDevices.getDisplayMedia({
+    video: { frameRate: targetFps },
     audio: false,
-    video: constraints as unknown as MediaTrackConstraints,
   });
 
   try {
@@ -63,17 +47,27 @@ function collectFrameTimestamps(stream: MediaStream, durationMs: number): Promis
   return new Promise((resolve) => {
     const video = document.createElement('video');
     video.muted = true;
+    video.playsInline = true;
     video.srcObject = stream;
+    // A detached video may not present frames (throttling rVFC and under-
+    // reporting fps). Attach it hidden so the reading reflects real capture.
+    video.style.cssText = 'position:fixed;width:2px;height:2px;opacity:0;pointer-events:none;';
+    document.body.appendChild(video);
 
     const timestamps: number[] = [];
     let startAt = 0;
     const hasRvfc = 'requestVideoFrameCallback' in video;
 
+    const finish = (): void => {
+      video.remove();
+      resolve(timestamps);
+    };
+
     const onFrame = (now: number): void => {
       if (startAt === 0) startAt = now;
       timestamps.push(now);
       if (now - startAt >= durationMs) {
-        resolve(timestamps);
+        finish();
         return;
       }
       (video as unknown as RvfcVideo).requestVideoFrameCallback(onFrame);
@@ -89,7 +83,7 @@ function collectFrameTimestamps(stream: MediaStream, durationMs: number): Promis
       const tick = (): void => {
         const t = performance.now();
         timestamps.push(t);
-        if (t - start >= durationMs) resolve(timestamps);
+        if (t - start >= durationMs) finish();
         else requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
