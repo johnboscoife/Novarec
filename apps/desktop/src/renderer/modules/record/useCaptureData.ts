@@ -1,3 +1,4 @@
+import { useCallback, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { deviceSource } from '@novarec/capture';
@@ -43,8 +44,23 @@ export function useSaveCaptureSettings() {
   });
 }
 
-/** Camera/microphone enumeration (renderer-only; labels need prior permission). */
+/**
+ * Camera/microphone enumeration (renderer-only). Includes USB / Bluetooth /
+ * built-in inputs. Re-enumerates automatically when devices are plugged in or
+ * removed (`devicechange`); labels appear once permission is granted (see
+ * `usePrimeDevices`).
+ */
 export function useMediaDevices() {
+  const client = useQueryClient();
+
+  useEffect(() => {
+    const refresh = () => {
+      void client.invalidateQueries({ queryKey: ['media-devices'] });
+    };
+    navigator.mediaDevices.addEventListener('devicechange', refresh);
+    return () => navigator.mediaDevices.removeEventListener('devicechange', refresh);
+  }, [client]);
+
   return useQuery<CaptureSource[]>({
     queryKey: ['media-devices'],
     queryFn: async () => {
@@ -63,4 +79,25 @@ export function useMediaDevices() {
         );
     },
   });
+}
+
+/**
+ * Returns a function that requests permission for a device kind (unlocking real
+ * device labels) then re-enumerates. Called when the user enables a camera or
+ * microphone track — permission they're opting into anyway.
+ */
+export function usePrimeDevices() {
+  const client = useQueryClient();
+  return useCallback(
+    async (constraints: MediaStreamConstraints) => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        stream.getTracks().forEach((t) => t.stop());
+      } catch {
+        // Permission denied or no device — labels stay generic; not fatal.
+      }
+      await client.invalidateQueries({ queryKey: ['media-devices'] });
+    },
+    [client],
+  );
 }

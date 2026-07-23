@@ -15,6 +15,7 @@ import {
   useCaptureSettings,
   useDisplays,
   useMediaDevices,
+  usePrimeDevices,
   useSaveCaptureSettings,
   useSources,
 } from './useCaptureData.js';
@@ -109,6 +110,17 @@ export function RecordView(): ReactElement {
   const windows = sources.data?.windows ?? [];
   const videoDevices = (devices.data ?? []).filter((d) => d.kind === 'camera');
   const audioDevices = (devices.data ?? []).filter((d) => d.kind === 'microphone');
+  const primeDevices = usePrimeDevices();
+
+  // Enabling a track unlocks real device names (Blue Yeti vs. "Microphone").
+  function toggleCamera(on: boolean): void {
+    setCameraOn(on);
+    if (on) void primeDevices({ video: true });
+  }
+  function toggleMic(on: boolean): void {
+    setMicOn(on);
+    if (on) void primeDevices({ audio: true });
+  }
 
   function buildTrackConfigs(): TrackConfig[] {
     const configs: TrackConfig[] = [];
@@ -392,7 +404,7 @@ export function RecordView(): ReactElement {
               <TrackToggle
                 label="Camera"
                 checked={cameraOn}
-                onToggle={setCameraOn}
+                onToggle={toggleCamera}
                 devices={videoDevices}
                 deviceId={cameraDeviceId}
                 onDevice={setCameraDeviceId}
@@ -400,7 +412,7 @@ export function RecordView(): ReactElement {
               <TrackToggle
                 label="Microphone"
                 checked={micOn}
-                onToggle={setMicOn}
+                onToggle={toggleMic}
                 devices={audioDevices}
                 deviceId={micDeviceId}
                 onDevice={setMicDeviceId}
