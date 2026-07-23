@@ -447,6 +447,11 @@ export function RecordView(): ReactElement {
                   : 'Select a screen or window first'}
             </button>
 
+            <p className="mt-2 text-xs text-muted-app">
+              Animates the screen for 3s to measure true capacity — screen capture only produces
+              frames when the picture changes, so a still screen isn&apos;t a real result.
+            </p>
+
             {probeError && <p className="mt-3 text-sm text-red-400">{probeError}</p>}
 
             {probe && (
