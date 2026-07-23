@@ -7,6 +7,7 @@ import type {
   IpcResponse,
   SavedRegion,
   SourceList,
+  WebcamShape,
 } from '@novarec/shared';
 
 /**
@@ -31,6 +32,11 @@ export interface NovaRecApi {
   setProbeMotion(
     payload: IpcRequest<'capture:probeMotion'>,
   ): Promise<IpcResponse<'capture:probeMotion'>>;
+  showWebcam(payload: IpcRequest<'webcam:show'>): Promise<IpcResponse<'webcam:show'>>;
+  hideWebcam(): Promise<IpcResponse<'webcam:hide'>>;
+  onWebcamConfig(
+    callback: (config: { deviceId: string | null; shape: WebcamShape; sizePx: number }) => void,
+  ): () => void;
 
   // --- Recording (Phase 2) ---
   startRecording(payload: IpcRequest<'recording:start'>): Promise<IpcResponse<'recording:start'>>;

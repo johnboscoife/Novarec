@@ -8,6 +8,7 @@ import {
   type SavedRegion,
   type TargetFps,
   type TrackConfig,
+  type WebcamShape,
 } from '@novarec/shared';
 import { useAppInfo } from '../shell/useAppInfo.js';
 import {
@@ -22,7 +23,6 @@ import { runSustainProbe, type ProbeResult } from './probe.js';
 import { useRecorder } from './useRecorder.js';
 import { RecordingControls } from './RecordingControls.js';
 import { RecoveryBanner } from './RecoveryBanner.js';
-import { CameraPreview } from './CameraPreview.js';
 import { useAppSettings } from '../settings/useAppSettings.js';
 import { useExportStore } from '../../exportStore.js';
 
@@ -52,6 +52,8 @@ export function RecordView(): ReactElement {
   const [systemAudioOn, setSystemAudioOn] = useState(false);
   const [cameraDeviceId, setCameraDeviceId] = useState<string | null>(null);
   const [micDeviceId, setMicDeviceId] = useState<string | null>(null);
+  const [webcamShape, setWebcamShape] = useState<WebcamShape>('circle');
+  const [webcamSize, setWebcamSize] = useState(240);
   const [countdown, setCountdown] = useState<number | null>(null);
 
   // Export is an app-wide background job (keeps running across view switches).
@@ -146,17 +148,8 @@ export function RecordView(): ReactElement {
         monitor: false,
       });
     }
-    if (cameraOn) {
-      configs.push({
-        id: 'camera',
-        kind: 'camera',
-        label: 'Camera',
-        enabled: true,
-        gain: 1,
-        monitor: false,
-        ...(cameraDeviceId ? { deviceId: cameraDeviceId } : {}),
-      });
-    }
+    // The camera is NOT a separate recorded track: it's the floating overlay
+    // window, captured into the screen recording in place. Nothing to add here.
     if (micOn) {
       configs.push({
         id: 'microphone',
@@ -181,7 +174,9 @@ export function RecordView(): ReactElement {
     return configs;
   }
 
-  const canRecord = selectedSourceId !== null || cameraOn || micOn || systemAudioOn;
+  // The floating camera is baked into the screen recording, so it isn't a
+  // standalone track — recording needs a screen/window or an audio source.
+  const canRecord = selectedSourceId !== null || micOn || systemAudioOn;
 
   function beginRecording(): void {
     if (!canRecord || recorder.state !== 'idle' || countdown !== null) return;
@@ -235,6 +230,23 @@ export function RecordView(): ReactElement {
       maybeAutoExport.current(recorder.lastRecordingDir);
     }
   }, [recorder.state, recorder.lastRecordingDir]);
+
+  // The floating webcam is a separate always-on-top window captured into the
+  // recording — so it appears in the export exactly where/size/shape it sits.
+  useEffect(() => {
+    if (cameraOn) {
+      void window.novarec.showWebcam({
+        deviceId: cameraDeviceId,
+        shape: webcamShape,
+        sizePx: webcamSize,
+      });
+    } else {
+      void window.novarec.hideWebcam();
+    }
+  }, [cameraOn, cameraDeviceId, webcamShape, webcamSize]);
+
+  // Always tear the overlay down when leaving Record.
+  useEffect(() => () => void window.novarec.hideWebcam(), []);
 
   // Global hotkeys drive the recording lifecycle even when the app is unfocused.
   const hotkeyHandler = useRef<(action: HotkeyAction) => void>(() => undefined);
@@ -433,12 +445,50 @@ export function RecordView(): ReactElement {
 
         {/* Camera preview + capacity check */}
         <div className="space-y-4">
-          {/* Release the camera before recording acquires it (countdown → null
-              flips this off), so the recorder never hits a device-busy camera. */}
-          <CameraPreview
-            active={cameraOn && recorder.state === 'idle' && countdown === null}
-            deviceId={cameraDeviceId}
-          />
+          {cameraOn && (
+            <div className="rounded-2xl border border-app bg-surface p-5">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-app">
+                Floating camera
+              </h2>
+              <p className="mt-2 text-xs text-muted-app">
+                A live webcam window floats on your screen — drag it anywhere; it&apos;s recorded in
+                place. Shape and size apply live, even while recording.
+              </p>
+
+              <div className="mt-3 flex gap-2">
+                {(['circle', 'rounded', 'square'] as const).map((shape) => (
+                  <button
+                    key={shape}
+                    type="button"
+                    onClick={() => setWebcamShape(shape)}
+                    className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium capitalize transition ${
+                      webcamShape === shape
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-surface2 text-app2 hover:bg-surface2'
+                    }`}
+                  >
+                    {shape}
+                  </button>
+                ))}
+              </div>
+
+              <label className="mt-4 block">
+                <span className="mb-1 flex items-center justify-between text-xs text-muted-app">
+                  <span>Size</span>
+                  <span>{webcamSize}px</span>
+                </span>
+                <input
+                  type="range"
+                  min={140}
+                  max={520}
+                  step={10}
+                  value={webcamSize}
+                  onChange={(e) => setWebcamSize(Number(e.target.value))}
+                  className="w-full accent-blue-500"
+                />
+              </label>
+            </div>
+          )}
 
           <div className="rounded-2xl border border-app bg-surface p-5">
             <div className="mb-3 flex items-center justify-between">

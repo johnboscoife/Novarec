@@ -27,6 +27,10 @@ export const TargetFpsSchema = z.union([
 ]);
 export type TargetFps = z.infer<typeof TargetFpsSchema>;
 
+/** Shape of the floating webcam overlay (clipped in CSS, transparent corners). */
+export const WebcamShapeSchema = z.enum(['circle', 'rounded', 'square']);
+export type WebcamShape = z.infer<typeof WebcamShapeSchema>;
+
 export const ResolutionSchema = z.object({
   width: z.number().positive(),
   height: z.number().positive(),

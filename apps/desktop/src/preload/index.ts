@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
-import type { HotkeyAction } from '@novarec/shared';
+import type { HotkeyAction, WebcamShape } from '@novarec/shared';
 import type { NovaRecApi } from './api.js';
 
 const api: NovaRecApi = {
@@ -14,6 +14,16 @@ const api: NovaRecApi = {
   beginRegionSelect: () => ipcRenderer.invoke('capture:beginRegionSelect'),
   setCaptureSource: (payload) => ipcRenderer.invoke('capture:setSource', payload),
   setProbeMotion: (payload) => ipcRenderer.invoke('capture:probeMotion', payload),
+  showWebcam: (payload) => ipcRenderer.invoke('webcam:show', payload),
+  hideWebcam: () => ipcRenderer.invoke('webcam:hide'),
+  onWebcamConfig: (callback) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      config: { deviceId: string | null; shape: WebcamShape; sizePx: number },
+    ): void => callback(config);
+    ipcRenderer.on('webcam:config', listener);
+    return () => ipcRenderer.removeListener('webcam:config', listener);
+  },
 
   startRecording: (payload) => ipcRenderer.invoke('recording:start', payload),
   writeInit: (payload) => ipcRenderer.invoke('recording:writeInit', payload),

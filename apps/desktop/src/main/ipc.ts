@@ -20,6 +20,7 @@ import { getDisplays, listSources } from './capture/enumerate.js';
 import { beginRegionSelect } from './capture/region-window.js';
 import { setPendingCaptureSource } from './capture/display-media.js';
 import { startProbeMotion, stopProbeMotion } from './capture/probe-motion.js';
+import { showWebcam, hideWebcam } from './overlays/webcam-window.js';
 import { loadCaptureSettings, saveCaptureSettings } from './settings-store.js';
 import {
   listOrphans,
@@ -113,6 +114,15 @@ export function registerIpcHandlers(): void {
   handleChannel('capture:probeMotion', async (req) => {
     if (req.on) await startProbeMotion(req.bounds);
     else stopProbeMotion();
+    return { ok: true as const };
+  });
+
+  handleChannel('webcam:show', (req) => {
+    showWebcam(req);
+    return { ok: true as const };
+  });
+  handleChannel('webcam:hide', () => {
+    hideWebcam();
     return { ok: true as const };
   });
 

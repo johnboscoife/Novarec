@@ -92,3 +92,11 @@ body {
   animation-iteration-count: 1 !important;
   transition-duration: 0.001ms !important;
 }
+
+/* Floating overlay windows (webcam, controls): draggable chrome. */
+.wc-drag {
+  -webkit-app-region: drag;
+}
+.wc-nodrag {
+  -webkit-app-region: no-drag;
+}

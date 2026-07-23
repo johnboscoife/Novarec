@@ -4,6 +4,7 @@ import {
   DisplayInfoSchema,
   SavedRegionSchema,
   SourceListSchema,
+  WebcamShapeSchema,
 } from '../model/capture.js';
 import {
   OrphanedRecordingSchema,
@@ -108,6 +109,18 @@ export const ipcContract = {
     }),
     response: Ok,
   },
+  // Floating webcam overlay: a live camera window the user drags/resizes over
+  // the screen. It's captured into the recording, so it appears in the export
+  // exactly where/size/shape it was. `show` opens or updates; `hide` closes.
+  'webcam:show': {
+    request: z.object({
+      deviceId: z.string().nullable(),
+      shape: WebcamShapeSchema,
+      sizePx: z.number().int().positive(),
+    }),
+    response: Ok,
+  },
+  'webcam:hide': { request: z.void(), response: Ok },
 
   // --- Recording (Phase 2/3): renderer streams encoded data; main persists it.
   // Multi-track: each enabled track is an independent segment writer. ---
