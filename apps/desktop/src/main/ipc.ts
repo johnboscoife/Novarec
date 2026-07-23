@@ -143,6 +143,12 @@ export function registerIpcHandlers(): void {
     shell.showItemInFolder(req.path);
     return { ok: true as const };
   });
+  handleChannel('shell:openExternal', async (req) => {
+    // Security: only ever hand http(s) URLs to the OS, never arbitrary schemes.
+    if (!/^https?:\/\//i.test(req.url)) throw new Error('Only http(s) URLs can be opened');
+    await shell.openExternal(req.url);
+    return { ok: true as const };
+  });
 
   // --- App settings (Phase 10) ---
   handleChannel('settings:get', () => loadAppSettings());

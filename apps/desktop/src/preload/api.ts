@@ -53,6 +53,9 @@ export interface NovaRecApi {
   // --- Export (Phase 7) ---
   runExport(payload: IpcRequest<'export:run'>): Promise<IpcResponse<'export:run'>>;
   revealPath(payload: IpcRequest<'shell:reveal'>): Promise<IpcResponse<'shell:reveal'>>;
+  openExternal(
+    payload: IpcRequest<'shell:openExternal'>,
+  ): Promise<IpcResponse<'shell:openExternal'>>;
   onExportProgress(
     callback: (progress: { elapsedMs: number; totalMs: number }) => void,
   ): () => void;

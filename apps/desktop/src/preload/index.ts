@@ -26,6 +26,7 @@ const api: NovaRecApi = {
 
   runExport: (payload) => ipcRenderer.invoke('export:run', payload),
   revealPath: (payload) => ipcRenderer.invoke('shell:reveal', payload),
+  openExternal: (payload) => ipcRenderer.invoke('shell:openExternal', payload),
 
   getAppSettings: () => ipcRenderer.invoke('settings:get'),
   saveAppSettings: (payload) => ipcRenderer.invoke('settings:save', payload),

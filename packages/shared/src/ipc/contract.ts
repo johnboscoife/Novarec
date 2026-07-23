@@ -139,6 +139,11 @@ export const ipcContract = {
   },
   // Reveal a produced file in the OS file manager.
   'shell:reveal': { request: z.object({ path: z.string() }), response: Ok },
+  // Open an http(s) URL in the user's default browser (e.g. a Google Meet link).
+  'shell:openExternal': {
+    request: z.object({ url: z.string().url() }),
+    response: Ok,
+  },
 
   // --- App settings (Phase 10) ---
   'settings:get': { request: z.void(), response: AppSettingsSchema },
