@@ -61,39 +61,18 @@ export function RecordView(): ReactElement {
   // Export is an app-wide background job (keeps running across view switches).
   const exportJob = useExportStore();
 
-  // Seed local state from persisted settings once loaded.
-  useEffect(() => {
-    if (settings.data) {
-      setTargetFps(settings.data.targetFps);
-      setRegion(settings.data.region);
-    }
-  }, [settings.data]);
-
-  function persist(next: { targetFps?: TargetFps; region?: SavedRegion | null }): void {
-    save.mutate({
-      targetFps: next.targetFps ?? targetFps,
-      region: next.region === undefined ? region : next.region,
-      resolution: null,
-    });
-  }
-
   function chooseFps(fps: TargetFps): void {
     setTargetFps(fps);
     setProbe(null);
-    persist({ targetFps: fps });
   }
 
   async function selectRegion(): Promise<void> {
     const picked = await window.novarec.beginRegionSelect();
-    if (picked) {
-      setRegion(picked);
-      persist({ region: picked });
-    }
+    if (picked) setRegion(picked);
   }
 
   function clearRegion(): void {
     setRegion(null);
-    persist({ region: null });
   }
 
   async function runProbe(): Promise<void> {
@@ -121,6 +100,55 @@ export function RecordView(): ReactElement {
   const info = useAppInfo();
   const appSettings = useAppSettings();
   const autoExportedDir = useRef<string | null>(null);
+
+  // Restore the last Record setup (once, when both settings have loaded) if the
+  // user opted to retain it; then keep persisting the setup as it changes.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current || !settings.data || appSettings.data === undefined) return;
+    seededRef.current = true;
+    const s = settings.data;
+    setTargetFps(s.targetFps);
+    setRegion(s.region);
+    if (appSettings.data.retainSetup) {
+      setSelectedSourceId(s.sourceId);
+      setCameraOn(s.cameraOn);
+      setMicOn(s.micOn);
+      setSystemAudioOn(s.systemAudioOn);
+      setCameraDeviceId(s.cameraDeviceId);
+      setMicDeviceId(s.micDeviceId);
+      setWebcamShape(s.webcamShape);
+      setWebcamSize(s.webcamSize);
+    }
+  }, [settings.data, appSettings.data]);
+
+  useEffect(() => {
+    if (!seededRef.current) return;
+    save.mutate({
+      targetFps,
+      resolution: null,
+      region,
+      sourceId: selectedSourceId,
+      cameraOn,
+      micOn,
+      systemAudioOn,
+      cameraDeviceId,
+      micDeviceId,
+      webcamShape,
+      webcamSize,
+    });
+  }, [
+    targetFps,
+    region,
+    selectedSourceId,
+    cameraOn,
+    micOn,
+    systemAudioOn,
+    cameraDeviceId,
+    micDeviceId,
+    webcamShape,
+    webcamSize,
+  ]);
   const screens = sources.data?.screens ?? [];
   const windows = sources.data?.windows ?? [];
   const videoDevices = (devices.data ?? []).filter((d) => d.kind === 'camera');

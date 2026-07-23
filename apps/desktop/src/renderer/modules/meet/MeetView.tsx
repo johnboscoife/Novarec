@@ -3,11 +3,15 @@ import { NEW_GOOGLE_MEET_URL, normalizeMeetUrl } from '@novarec/shared';
 import { useAppStore } from '../../store.js';
 import { useAppSettings } from '../settings/useAppSettings.js';
 import { useGoogleProfile, useGoogleSignIn, useGoogleSignOut } from './useGoogleAuth.js';
+import { GOOGLE_MEET_ENABLED } from '../../featureFlags.js';
 
 type MeetPlatform = 'google' | 'novarec';
 
 export function MeetView(): ReactElement {
-  const [platform, setPlatform] = useState<MeetPlatform | null>(null);
+  // With Google Meet suspended there's only one platform, so skip the chooser.
+  const [platform, setPlatform] = useState<MeetPlatform | null>(
+    GOOGLE_MEET_ENABLED ? null : 'novarec',
+  );
 
   return (
     <section className="flex h-full flex-col overflow-auto p-8">
@@ -22,7 +26,7 @@ export function MeetView(): ReactElement {
                 : 'Start or join a meeting'}
           </h1>
         </div>
-        {platform && (
+        {GOOGLE_MEET_ENABLED && platform && (
           <button
             type="button"
             onClick={() => setPlatform(null)}
@@ -33,8 +37,8 @@ export function MeetView(): ReactElement {
         )}
       </header>
 
-      {platform === null && <PlatformChooser onChoose={setPlatform} />}
-      {platform === 'google' && <GoogleMeetPanel />}
+      {GOOGLE_MEET_ENABLED && platform === null && <PlatformChooser onChoose={setPlatform} />}
+      {GOOGLE_MEET_ENABLED && platform === 'google' && <GoogleMeetPanel />}
       {platform === 'novarec' && <NovaRecMeetingPanel />}
     </section>
   );
@@ -320,8 +324,8 @@ function NovaRecMeetingPanel(): ReactElement {
         <Feature>Per-participant local track recording</Feature>
       </div>
       <p className="mt-5 text-sm text-muted-app">
-        Need a meeting today? Use <span className="text-app2">Google Meet</span> — it&apos;s ready
-        and records with NovaRec.
+        In the meantime, you can record any meeting (Zoom, Teams, Meet in your browser, …) from the{' '}
+        <span className="text-app2">Record</span> tab.
       </p>
     </div>
   );

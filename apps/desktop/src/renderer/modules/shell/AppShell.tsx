@@ -1,4 +1,5 @@
 import { useEffect, type ReactElement } from 'react';
+import type { Theme } from '@novarec/shared';
 import { useAppStore, type ViewId } from '../../store.js';
 import { RecordView } from '../record/RecordView.js';
 import { MeetView } from '../meet/MeetView.js';
@@ -26,6 +27,7 @@ export function AppShell(): ReactElement {
   const setView = useAppStore((s) => s.setView);
   const settings = useAppSettings();
   const saveSettings = useSaveAppSettings();
+  const appSettings = settings.data;
   const showOnboarding = settings.data !== undefined && !settings.data.onboardingComplete;
 
   function completeOnboarding(): void {
@@ -59,6 +61,21 @@ export function AppShell(): ReactElement {
         ))}
         <div className="mt-auto space-y-2">
           <ExportIndicator />
+          {appSettings && (
+            <button
+              type="button"
+              onClick={() =>
+                saveSettings.mutate({
+                  ...appSettings,
+                  theme: resolveTheme(appSettings.theme) === 'dark' ? 'light' : 'dark',
+                })
+              }
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-muted-app transition hover:bg-surface hover:text-app2"
+            >
+              <span aria-hidden>{resolveTheme(appSettings.theme) === 'dark' ? '☀️' : '🌙'}</span>
+              <span>{resolveTheme(appSettings.theme) === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+            </button>
+          )}
           <NavButton
             item={{ id: 'settings', label: 'Settings', hint: 'Preferences & privacy' }}
             active={view === 'settings'}
@@ -78,6 +95,13 @@ export function AppShell(): ReactElement {
       </main>
     </div>
   );
+}
+
+function resolveTheme(theme: Theme): 'light' | 'dark' {
+  if (theme === 'system') {
+    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  }
+  return theme;
 }
 
 function ExportIndicator(): ReactElement | null {

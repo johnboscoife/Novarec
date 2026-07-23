@@ -8,6 +8,7 @@ import {
 } from '@novarec/shared';
 import { useAppInfo } from '../shell/useAppInfo.js';
 import { useAppSettings, useSaveAppSettings } from './useAppSettings.js';
+import { GOOGLE_MEET_ENABLED } from '../../featureFlags.js';
 
 const ACTION_LABELS: Record<HotkeyAction, string> = {
   startStop: 'Start / stop recording',
@@ -69,6 +70,12 @@ export function SettingsView(): ReactElement {
             checked={current.autoExportOnStop}
             onChange={(v) => update({ autoExportOnStop: v })}
           />
+          <ToggleRow
+            label="Remember my setup"
+            hint="Restore the last capture source, tracks, webcam shape/size and frame rate when NovaRec reopens."
+            checked={current.retainSetup}
+            onChange={(v) => update({ retainSetup: v })}
+          />
         </Panel>
 
         <Panel title="Privacy">
@@ -94,7 +101,7 @@ export function SettingsView(): ReactElement {
           </Row>
         </Panel>
 
-        <GoogleAccountPanel current={current} onSave={update} />
+        {GOOGLE_MEET_ENABLED && <GoogleAccountPanel current={current} onSave={update} />}
 
         <Panel title="Global shortcuts">
           <ul className="space-y-1.5 text-sm">

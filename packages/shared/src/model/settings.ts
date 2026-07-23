@@ -21,6 +21,12 @@ export const AppSettingsSchema = z.object({
   // secret is not confidential). Null until configured.
   googleClientId: z.string().nullable().default(null),
   googleClientSecret: z.string().nullable().default(null),
+  // Remember the last Record setup (source, tracks, webcam, fps…) across launches.
+  retainSetup: z.boolean().default(true),
+  // Folder exported files are written to (null = default <Videos>/NovaRec).
+  exportFolder: z.string().nullable().default(null),
+  // Delete the raw recording segments automatically once an export succeeds.
+  deleteRawAfterExport: z.boolean().default(false),
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 
@@ -35,4 +41,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   autoExportOnStop: true,
   googleClientId: null,
   googleClientSecret: null,
+  retainSetup: true,
+  exportFolder: null,
+  deleteRawAfterExport: false,
 };

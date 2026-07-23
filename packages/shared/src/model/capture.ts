@@ -71,6 +71,16 @@ export const CaptureSettingsSchema = z.object({
   targetFps: TargetFpsSchema,
   resolution: ResolutionSchema.nullable(), // null = source-native
   region: SavedRegionSchema.nullable(),
+  // Persisted Record setup (restored on launch when "retain setup" is on).
+  // `.default` keeps older settings files valid on load.
+  sourceId: z.string().nullable().default(null),
+  cameraOn: z.boolean().default(false),
+  micOn: z.boolean().default(false),
+  systemAudioOn: z.boolean().default(false),
+  cameraDeviceId: z.string().nullable().default(null),
+  micDeviceId: z.string().nullable().default(null),
+  webcamShape: WebcamShapeSchema.default('circle'),
+  webcamSize: z.number().int().positive().default(240),
 });
 export type CaptureSettings = z.infer<typeof CaptureSettingsSchema>;
 
@@ -78,6 +88,14 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   targetFps: 30,
   resolution: null,
   region: null,
+  sourceId: null,
+  cameraOn: false,
+  micOn: false,
+  systemAudioOn: false,
+  cameraDeviceId: null,
+  micDeviceId: null,
+  webcamShape: 'circle',
+  webcamSize: 240,
 };
 
 /** Raw `desktopCapturer` enumeration results (normalized by @novarec/capture). */

@@ -7,7 +7,7 @@ import {
 } from './capture.js';
 
 describe('capture settings persistence', () => {
-  it('round-trips valid saved settings', () => {
+  it('round-trips core settings and fills setup defaults for older files', () => {
     const settings = {
       targetFps: 60,
       resolution: { width: 1920, height: 1080 },
@@ -17,7 +17,11 @@ describe('capture settings persistence', () => {
         updatedAt: '2026-07-22T10:00:00.000Z',
       },
     };
-    expect(CaptureSettingsSchema.parse(settings)).toEqual(settings);
+    const parsed = CaptureSettingsSchema.parse(settings);
+    expect(parsed).toMatchObject(settings); // core fields preserved
+    expect(parsed.cameraOn).toBe(false); // new setup fields default in
+    expect(parsed.webcamShape).toBe('circle');
+    expect(parsed.webcamSize).toBe(240);
   });
 
   it('accepts the documented defaults', () => {
