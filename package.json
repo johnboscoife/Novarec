@@ -2,6 +2,9 @@
   "name": "novarec",
   "version": "0.0.0",
   "private": true,
+  "description": "Record, meet, and stream from one shared capture engine.",
+  "license": "MIT",
+  "author": "NovaRec",
   "type": "module",
   "packageManager": "pnpm@9.15.0",
   "engines": {
