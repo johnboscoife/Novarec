@@ -156,10 +156,59 @@ class TrackRecorder {
   }
 }
 
+/**
+ * A microphone stream that survives its input device being unplugged mid-
+ * recording. Audio is routed through a Web Audio destination whose output track
+ * is STABLE, so the MediaRecorder never sees the track end (which would corrupt
+ * the fMP4). When the live device ends, we re-acquire — falling back to the
+ * system default — and reconnect to the same destination. There's a brief gap of
+ * silence during the swap, but the track (and its single init segment) is intact.
+ */
+class ResilientAudioStream {
+  private readonly ctx = new AudioContext();
+  private readonly dest = this.ctx.createMediaStreamDestination();
+  private source: MediaStreamAudioSourceNode | null = null;
+  private live: MediaStream | null = null;
+  readonly stream = this.dest.stream;
+
+  constructor(private readonly deviceId: string | null) {}
+
+  async start(): Promise<void> {
+    if (this.ctx.state === 'suspended') await this.ctx.resume().catch(() => undefined);
+    await this.attach();
+    navigator.mediaDevices.addEventListener('devicechange', this.onDeviceChange);
+  }
+
+  private attach = async (): Promise<void> => {
+    const mic = await acquireDeviceStream('audio', this.deviceId);
+    this.source?.disconnect();
+    this.live?.getTracks().forEach((t) => t.stop());
+    this.live = mic;
+    this.source = this.ctx.createMediaStreamSource(mic);
+    this.source.connect(this.dest);
+    mic.getAudioTracks().forEach((track) => {
+      track.onended = () => void this.attach().catch(() => undefined);
+    });
+  };
+
+  private onDeviceChange = (): void => {
+    const track = this.live?.getAudioTracks()[0];
+    if (!track || track.readyState === 'ended') void this.attach().catch(() => undefined);
+  };
+
+  stop(): void {
+    navigator.mediaDevices.removeEventListener('devicechange', this.onDeviceChange);
+    this.source?.disconnect();
+    this.live?.getTracks().forEach((t) => t.stop());
+    void this.ctx.close().catch(() => undefined);
+  }
+}
+
 export class MultiTrackRecorder {
   private recordingId: string | null = null;
   private tracks: TrackRecorder[] = [];
   private micRecorder: TrackRecorder | null = null;
+  private audioSwappers: ResilientAudioStream[] = [];
   private perTrack = new Map<string, number>();
 
   constructor(private readonly callbacks: RecorderCallbacks) {}
@@ -181,8 +230,19 @@ export class MultiTrackRecorder {
     // A caller (Studio) can inject an already-acquired stream by track id.
     for (const config of enabled) {
       try {
-        const stream =
-          providedStreams?.[config.id] ?? (await acquireStream(config, targetFps, screenSourceId));
+        let stream: MediaStream;
+        if (config.kind === 'microphone' && !providedStreams?.[config.id]) {
+          // Record the mic through a resilient pipeline so unplugging the device
+          // mid-recording swaps to the system default instead of dropping audio.
+          const swapper = new ResilientAudioStream(config.deviceId ?? null);
+          await swapper.start();
+          this.audioSwappers.push(swapper);
+          stream = swapper.stream;
+        } else {
+          stream =
+            providedStreams?.[config.id] ??
+            (await acquireStream(config, targetFps, screenSourceId));
+        }
         const isVideo = config.kind === 'screen' || config.kind === 'camera';
         const recorder = new TrackRecorder(
           recordingId,
@@ -205,6 +265,8 @@ export class MultiTrackRecorder {
     }
 
     if (this.tracks.length === 0) {
+      this.audioSwappers.forEach((s) => s.stop());
+      this.audioSwappers = [];
       await window.novarec.stopRecording({ recordingId, atMs: performance.now() });
       this.recordingId = null;
       throw new Error('No tracks could be started — check permissions and try again');
@@ -246,6 +308,8 @@ export class MultiTrackRecorder {
       });
       result = { dir: summary.dir };
     }
+    this.audioSwappers.forEach((s) => s.stop());
+    this.audioSwappers = [];
     this.tracks = [];
     this.micRecorder = null;
     this.recordingId = null;

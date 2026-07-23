@@ -38,11 +38,13 @@ export function WebcamOverlay(): ReactElement {
     });
   }, []);
 
-  // Acquire (and re-acquire on device change) the camera stream.
+  // Acquire the camera, falling back to the default if the chosen one is gone,
+  // and hot-swap if it's unplugged while live.
   useEffect(() => {
-    let stream: MediaStream | null = null;
+    let current: MediaStream | null = null;
     let cancelled = false;
     setError(null);
+
     const getCamera = async (): Promise<MediaStream> => {
       try {
         return await navigator.mediaDevices.getUserMedia({
@@ -51,30 +53,39 @@ export function WebcamOverlay(): ReactElement {
         });
       } catch (e) {
         if (!deviceId) throw e;
-        // Chosen webcam gone (unplugged) → fall back to the default camera.
         return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       }
     };
 
-    getCamera()
-      .then((s) => {
+    const attach = async (): Promise<void> => {
+      try {
+        const s = await getCamera();
         if (cancelled) {
           s.getTracks().forEach((t) => t.stop());
           return;
         }
-        stream = s;
+        current?.getTracks().forEach((t) => t.stop());
+        current = s;
+        setError(null);
         const el = videoRef.current;
         if (el) {
           el.srcObject = s;
           void el.play().catch(() => undefined);
         }
-      })
-      .catch((e: unknown) => {
+        s.getVideoTracks().forEach((t) => {
+          t.onended = () => {
+            if (!cancelled) void attach();
+          };
+        });
+      } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Camera unavailable');
-      });
+      }
+    };
+
+    void attach();
     return () => {
       cancelled = true;
-      if (stream) stream.getTracks().forEach((t) => t.stop());
+      current?.getTracks().forEach((t) => t.stop());
     };
   }, [deviceId]);
 

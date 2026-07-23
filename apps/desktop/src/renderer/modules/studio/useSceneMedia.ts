@@ -83,23 +83,7 @@ async function acquire(
       return;
     }
 
-    let stream: MediaStream;
-    if (source.kind === 'camera') {
-      const id = source.deviceId;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: id ? { deviceId: { exact: id } } : true,
-          audio: false,
-        });
-      } catch (e) {
-        if (!id) throw e;
-        // Chosen camera unplugged → fall back to the default camera.
-        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      }
-    } else {
-      await window.novarec.setCaptureSource({ sourceId: source.screenSourceId, audio: false });
-      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-    }
+    const stream = await getVideoStream(source);
 
     if (map.get(key) !== entry) {
       stream.getTracks().forEach((t) => t.stop());
@@ -117,7 +101,57 @@ async function acquire(
     entry.el = video;
     entry.stream = stream;
     entry.ready = true;
+    watchForDeviceLoss(source, entry, map, key);
   } catch {
     entry.ready = false;
   }
+}
+
+/** Camera/screen stream — a camera falls back to the system default if unplugged. */
+async function getVideoStream(source: SceneSource): Promise<MediaStream> {
+  if (source.kind === 'camera') {
+    const id = source.deviceId;
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        video: id ? { deviceId: { exact: id } } : true,
+        audio: false,
+      });
+    } catch (e) {
+      if (!id) throw e;
+      return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    }
+  }
+  await window.novarec.setCaptureSource({ sourceId: source.screenSourceId, audio: false });
+  return navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+}
+
+/** If the source's device ends mid-scene, re-acquire and hot-swap the stream. */
+function watchForDeviceLoss(
+  source: SceneSource,
+  entry: MediaEntry,
+  map: Map<string, MediaEntry>,
+  key: string,
+): void {
+  const track = entry.stream?.getVideoTracks()[0];
+  if (!track) return;
+  track.onended = () => {
+    void (async () => {
+      try {
+        const next = await getVideoStream(source);
+        if (map.get(key) !== entry) {
+          next.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        entry.stream?.getTracks().forEach((t) => t.stop());
+        entry.stream = next;
+        if (entry.el instanceof HTMLVideoElement) {
+          entry.el.srcObject = next;
+          await entry.el.play().catch(() => undefined);
+        }
+        watchForDeviceLoss(source, entry, map, key);
+      } catch {
+        // leave the last frame in place
+      }
+    })();
+  };
 }
