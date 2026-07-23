@@ -14,7 +14,7 @@ import {
   RecordingSummarySchema,
   TrackConfigSchema,
 } from '../model/recording-io.js';
-import { ExportSettingsSchema } from '../model/export.js';
+import { ExportHistoryEntrySchema, ExportSettingsSchema } from '../model/export.js';
 import { AppSettingsSchema } from '../model/settings.js';
 import { GoogleProfileSchema } from '../model/meet.js';
 
@@ -162,6 +162,27 @@ export const ipcContract = {
   },
   // Reveal a produced file in the OS file manager.
   'shell:reveal': { request: z.object({ path: z.string() }), response: Ok },
+  // Pick the destination folder for exports.
+  'export:chooseFolder': { request: z.void(), response: z.object({ path: z.string().nullable() }) },
+  // Export history (produced files) — list, rename the file, remove an entry.
+  'export:history': { request: z.void(), response: z.array(ExportHistoryEntrySchema) },
+  'export:rename': {
+    request: z.object({ id: z.string(), name: z.string() }),
+    response: ExportHistoryEntrySchema,
+  },
+  'export:removeHistory': {
+    request: z.object({ id: z.string(), deleteFile: z.boolean() }),
+    response: z.array(ExportHistoryEntrySchema),
+  },
+  // Raw recording segments: measure size, and delete to free space after export.
+  'recording:size': {
+    request: z.object({ dir: z.string() }),
+    response: z.object({ bytes: z.number().nonnegative() }),
+  },
+  'recording:deleteRaw': {
+    request: z.object({ dir: z.string() }),
+    response: z.object({ freedBytes: z.number().nonnegative() }),
+  },
   // Open an http(s) URL in the user's default browser (e.g. a Google Meet link).
   'shell:openExternal': {
     request: z.object({ url: z.string().url() }),

@@ -1,4 +1,4 @@
-import { app, ipcMain, shell } from 'electron';
+import { app, dialog, ipcMain, shell } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
 import {
@@ -29,9 +29,11 @@ import {
 } from './overlays/controls-window.js';
 import { loadCaptureSettings, saveCaptureSettings } from './settings-store.js';
 import {
+  deleteRawRecording,
   listOrphans,
   pauseRecording,
   recover,
+  recordingSize,
   resumeRecording,
   startRecording,
   stopRecording,
@@ -39,6 +41,7 @@ import {
   writeInit,
 } from './recording/session.js';
 import { runExport } from './recording/export.js';
+import { listHistory, removeHistory, renameHistory } from './export-history-store.js';
 import { loadAppSettings, saveAppSettings } from './app-settings-store.js';
 import {
   signIn as googleSignIn,
@@ -188,6 +191,22 @@ export function registerIpcHandlers(): void {
     await shell.openExternal(req.url);
     return { ok: true as const };
   });
+
+  handleChannel('export:chooseFolder', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Choose export folder',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    const picked = result.canceled ? null : (result.filePaths[0] ?? null);
+    return { path: picked };
+  });
+  handleChannel('export:history', () => listHistory());
+  handleChannel('export:rename', (req) => renameHistory(req.id, req.name));
+  handleChannel('export:removeHistory', (req) => removeHistory(req.id, req.deleteFile));
+  handleChannel('recording:size', async (req) => ({ bytes: await recordingSize(req.dir) }));
+  handleChannel('recording:deleteRaw', async (req) => ({
+    freedBytes: await deleteRawRecording(req.dir),
+  }));
 
   // --- App settings (Phase 10) ---
   handleChannel('settings:get', () => loadAppSettings());

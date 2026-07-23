@@ -37,6 +37,12 @@ const api: NovaRecApi = {
   runExport: (payload) => ipcRenderer.invoke('export:run', payload),
   revealPath: (payload) => ipcRenderer.invoke('shell:reveal', payload),
   openExternal: (payload) => ipcRenderer.invoke('shell:openExternal', payload),
+  chooseExportFolder: () => ipcRenderer.invoke('export:chooseFolder'),
+  exportHistory: () => ipcRenderer.invoke('export:history'),
+  renameExport: (payload) => ipcRenderer.invoke('export:rename', payload),
+  removeExport: (payload) => ipcRenderer.invoke('export:removeHistory', payload),
+  recordingSize: (payload) => ipcRenderer.invoke('recording:size', payload),
+  deleteRawRecording: (payload) => ipcRenderer.invoke('recording:deleteRaw', payload),
 
   getAppSettings: () => ipcRenderer.invoke('settings:get'),
   saveAppSettings: (payload) => ipcRenderer.invoke('settings:save', payload),

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type ViewId = 'record' | 'meet' | 'studio' | 'settings';
+export type ViewId = 'record' | 'meet' | 'studio' | 'exports' | 'settings';
 
 interface AppState {
   view: ViewId;

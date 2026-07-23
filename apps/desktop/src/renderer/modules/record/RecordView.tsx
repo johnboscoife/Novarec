@@ -56,6 +56,8 @@ export function RecordView(): ReactElement {
   const [webcamShape, setWebcamShape] = useState<WebcamShape>('circle');
   const [webcamSize, setWebcamSize] = useState(240);
   const [micMuted, setMicMuted] = useState(false);
+  const [rawBytes, setRawBytes] = useState<number | null>(null);
+  const [rawDeleted, setRawDeleted] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
 
   // Export is an app-wide background job (keeps running across view switches).
@@ -261,6 +263,28 @@ export function RecordView(): ReactElement {
     }
   }, [recorder.state, recorder.lastRecordingDir]);
 
+  // Reset the "delete original" affordance whenever a new recording appears.
+  useEffect(() => {
+    setRawDeleted(false);
+    setRawBytes(null);
+  }, [recorder.lastRecordingDir]);
+
+  // Once an export finishes, measure the raw recording so we can offer to free it.
+  useEffect(() => {
+    const dir = recorder.lastRecordingDir;
+    if (jobForThis?.status === 'done' && dir && !rawDeleted && rawBytes === null) {
+      void window.novarec.recordingSize({ dir }).then(({ bytes }) => setRawBytes(bytes));
+    }
+  }, [jobForThis?.status, recorder.lastRecordingDir, rawDeleted, rawBytes]);
+
+  async function deleteRaw(): Promise<void> {
+    const dir = recorder.lastRecordingDir;
+    if (!dir) return;
+    await window.novarec.deleteRawRecording({ dir }).catch(() => undefined);
+    setRawDeleted(true);
+    setRawBytes(null);
+  }
+
   // The floating webcam is a separate always-on-top window captured into the
   // recording — so it appears in the export exactly where/size/shape it sits.
   useEffect(() => {
@@ -383,6 +407,20 @@ export function RecordView(): ReactElement {
             </div>
           )}
           {exportError && <p className="mt-2 text-sm text-red-400">{exportError}</p>}
+          {exportedPath && rawBytes !== null && rawBytes > 0 && !rawDeleted && (
+            <button
+              type="button"
+              onClick={() => void deleteRaw()}
+              className="mt-3 rounded-lg bg-surface2 px-3 py-1.5 text-xs text-app2 transition hover:text-app"
+            >
+              Delete original recording · free {(rawBytes / (1024 * 1024)).toFixed(0)} MB
+            </button>
+          )}
+          {rawDeleted && (
+            <p className="mt-2 text-xs text-muted-app">
+              Original recording deleted to free space ✓
+            </p>
+          )}
         </div>
       )}
 

@@ -64,6 +64,16 @@ export interface NovaRecApi {
   openExternal(
     payload: IpcRequest<'shell:openExternal'>,
   ): Promise<IpcResponse<'shell:openExternal'>>;
+  chooseExportFolder(): Promise<IpcResponse<'export:chooseFolder'>>;
+  exportHistory(): Promise<IpcResponse<'export:history'>>;
+  renameExport(payload: IpcRequest<'export:rename'>): Promise<IpcResponse<'export:rename'>>;
+  removeExport(
+    payload: IpcRequest<'export:removeHistory'>,
+  ): Promise<IpcResponse<'export:removeHistory'>>;
+  recordingSize(payload: IpcRequest<'recording:size'>): Promise<IpcResponse<'recording:size'>>;
+  deleteRawRecording(
+    payload: IpcRequest<'recording:deleteRaw'>,
+  ): Promise<IpcResponse<'recording:deleteRaw'>>;
   onExportProgress(
     callback: (progress: { elapsedMs: number; totalMs: number }) => void,
   ): () => void;

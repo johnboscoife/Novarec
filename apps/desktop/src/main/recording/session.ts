@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { readdir, stat } from 'node:fs/promises';
+import { readdir, rm, stat } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { app } from 'electron';
 import {
@@ -182,6 +182,45 @@ export async function listOrphans(): Promise<OrphanedRecording[]> {
     });
   }
   return result;
+}
+
+/** Total bytes on disk for a recording (all its track segments + manifests). */
+async function directorySize(dir: string): Promise<number> {
+  let total = 0;
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  for (const entry of entries) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      total += await directorySize(path);
+    } else {
+      try {
+        total += (await stat(path)).size;
+      } catch {
+        // ignore vanished files
+      }
+    }
+  }
+  return total;
+}
+
+export async function recordingSize(dir: string): Promise<number> {
+  if (!resolve(dir).startsWith(resolve(vault()))) return 0;
+  return directorySize(dir);
+}
+
+/** Delete a recording's raw segments to reclaim space (vault-scoped). */
+export async function deleteRawRecording(dir: string): Promise<number> {
+  if (!resolve(dir).startsWith(resolve(vault()))) {
+    throw new Error('Refusing to delete a path outside the recordings vault');
+  }
+  const freed = await directorySize(dir);
+  await rm(dir, { recursive: true, force: true });
+  return freed;
 }
 
 export async function recover(dir: string): Promise<RecoveryResult> {

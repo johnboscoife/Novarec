@@ -38,6 +38,17 @@ export interface ExportPreset {
   settings: ExportSettings;
 }
 
+/** A produced export file, tracked so it can be listed, renamed, or removed. */
+export const ExportHistoryEntrySchema = z.object({
+  id: z.string(),
+  path: z.string(),
+  name: z.string(),
+  sizeBytes: z.number().nonnegative(),
+  createdAtMs: z.number(),
+  durationMs: z.number().nonnegative(),
+});
+export type ExportHistoryEntry = z.infer<typeof ExportHistoryEntrySchema>;
+
 const h264 = (width: number, height: number, fps: number, crf: number): ExportSettings => ({
   container: 'mp4',
   videoCodec: 'h264',

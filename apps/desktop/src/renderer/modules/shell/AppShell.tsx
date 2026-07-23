@@ -4,6 +4,7 @@ import { useAppStore, type ViewId } from '../../store.js';
 import { RecordView } from '../record/RecordView.js';
 import { MeetView } from '../meet/MeetView.js';
 import { StudioView } from '../studio/StudioView.js';
+import { ExportsView } from '../exports/ExportsView.js';
 import { SettingsView } from '../settings/SettingsView.js';
 import { useAppSettings, useSaveAppSettings } from '../settings/useAppSettings.js';
 import { Onboarding } from './Onboarding.js';
@@ -20,6 +21,7 @@ const NAV: readonly NavItem[] = [
   { id: 'record', label: 'Record', hint: 'Screen recorder' },
   { id: 'meet', label: 'Meet', hint: 'Video meetings' },
   { id: 'studio', label: 'Studio', hint: 'Live compositor' },
+  { id: 'exports', label: 'Exports', hint: 'Your exported files' },
 ];
 
 export function AppShell(): ReactElement {
@@ -91,6 +93,7 @@ export function AppShell(): ReactElement {
         {view === 'record' && <RecordView />}
         {view === 'meet' && <MeetView />}
         {view === 'studio' && <StudioView />}
+        {view === 'exports' && <ExportsView />}
         {view === 'settings' && <SettingsView />}
       </main>
     </div>
