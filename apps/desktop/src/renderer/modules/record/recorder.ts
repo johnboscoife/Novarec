@@ -69,7 +69,12 @@ async function acquireStream(
   switch (config.kind) {
     case 'screen': {
       await window.novarec.setCaptureSource({ sourceId: config.sourceId ?? null, audio: false });
-      return media.getDisplayMedia({ video: { frameRate: targetFps }, audio: false });
+      // Cap capture to 1080p: encoding native 4K (e.g. a 3x-DPI display) at speed
+      // is what stalls modest machines mid-recording. Chromium downscales for us.
+      return media.getDisplayMedia({
+        video: { frameRate: targetFps, width: { max: 1920 }, height: { max: 1080 } },
+        audio: false,
+      });
     }
     case 'camera':
       return acquireDeviceStream('video', config.deviceId ?? null);

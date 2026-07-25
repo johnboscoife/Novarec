@@ -59,7 +59,8 @@ export async function runSustainProbe(
   // secondary screen isn't measured as static. Null for window sources.
   await window.novarec.setProbeMotion({ on: true, bounds: motionBounds }).catch(() => undefined);
   const stream = await navigator.mediaDevices.getDisplayMedia({
-    video: { frameRate: targetFps },
+    // Match the recorder's 1080p cap so the probe measures what will be recorded.
+    video: { frameRate: targetFps, width: { max: 1920 }, height: { max: 1080 } },
     audio: false,
   });
 
