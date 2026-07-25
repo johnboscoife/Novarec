@@ -8,13 +8,13 @@ import {
   type ConsentLedger,
   type TrackConfig,
 } from '@novarec/shared';
-
-const SCENE_PRESET = EXPORT_PRESETS[0]!; // 1080p MP4
 import { useAppStore } from '../../store.js';
 import { useAppSettings } from '../settings/useAppSettings.js';
 import { useRecorder } from '../record/useRecorder.js';
 import { useExportStore } from '../../exportStore.js';
 import { MeetingRecorder } from './meetingRecorder.js';
+
+const SCENE_PRESET = EXPORT_PRESETS[0]!; // 1080p MP4
 
 /**
  * NovaRec meeting: a real LiveKit call. Tokens are minted locally in main from
@@ -73,6 +73,8 @@ export function NovaMeet(): ReactElement {
   const meetingRecRef = useRef<MeetingRecorder | null>(null);
   const ledgerRef = useRef<ConsentLedger>({});
   const consentTimer = useRef<number | null>(null);
+  const recordingRef = useRef(false);
+  recordingRef.current = recording;
   const bump = useCallback(() => forceRender((n) => n + 1), []);
 
   useEffect(
@@ -107,7 +109,14 @@ export function NovaMeet(): ReactElement {
       const rtc = new Room({ adaptiveStream: true, dynacast: true });
       roomRef.current = rtc;
       rtc
-        .on(RoomEvent.ParticipantConnected, bump)
+        .on(RoomEvent.ParticipantConnected, () => {
+          // Someone joined mid-recording: tell them so the "Recording" indicator
+          // shows for them too (transparency is non-negotiable).
+          if (recordingRef.current && roomRef.current) {
+            sendMsg(roomRef.current, { t: 'rec', on: true });
+          }
+          bump();
+        })
         .on(RoomEvent.ParticipantDisconnected, bump)
         .on(RoomEvent.TrackSubscribed, bump)
         .on(RoomEvent.TrackUnsubscribed, bump)
