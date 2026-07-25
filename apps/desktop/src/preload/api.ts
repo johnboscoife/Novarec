@@ -57,6 +57,7 @@ export interface NovaRecApi {
   recoverRecording(
     payload: IpcRequest<'recording:recover'>,
   ): Promise<IpcResponse<'recording:recover'>>;
+  revealRecordings(): Promise<IpcResponse<'recording:revealVault'>>;
 
   // --- Export (Phase 7) ---
   runExport(payload: IpcRequest<'export:run'>): Promise<IpcResponse<'export:run'>>;

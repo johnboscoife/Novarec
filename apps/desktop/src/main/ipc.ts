@@ -36,6 +36,7 @@ import {
   pauseRecording,
   recover,
   recordingSize,
+  recordingsVault,
   resumeRecording,
   startRecording,
   stopRecording,
@@ -175,6 +176,10 @@ export function registerIpcHandlers(): void {
   handleChannel('recording:stop', (req) => stopRecording(req.recordingId, req.atMs));
   handleChannel('recording:listOrphans', () => listOrphans());
   handleChannel('recording:recover', (req) => recover(req.dir));
+  handleChannel('recording:revealVault', async () => {
+    await shell.openPath(recordingsVault());
+    return { ok: true as const };
+  });
 
   // --- Export (Phase 7) --- manual handler so we can stream progress events.
   ipcMain.handle('export:run', async (event: IpcMainInvokeEvent, raw: unknown) => {

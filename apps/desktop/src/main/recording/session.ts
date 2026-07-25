@@ -39,6 +39,11 @@ function vault(): string {
   return join(app.getPath('userData'), 'recordings');
 }
 
+/** The recordings vault path, so the UI can reveal it in the file manager. */
+export function recordingsVault(): string {
+  return vault();
+}
+
 async function subdirectories(dir: string): Promise<string[]> {
   try {
     const entries = await readdir(dir, { withFileTypes: true });
@@ -123,7 +128,7 @@ export async function writeFragment(
     if (error instanceof DiskFullError) await finalize(recordingId, 0);
     throw error;
   }
-  return sealedSegments(track.writer.state).length;
+  return track.writer.sealedSegmentCount;
 }
 
 export async function pauseRecording(recordingId: string, atMs: number): Promise<void> {

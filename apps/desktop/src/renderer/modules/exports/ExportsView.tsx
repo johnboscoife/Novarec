@@ -46,9 +46,19 @@ export function ExportsView(): ReactElement {
 
   return (
     <section className="flex h-full flex-col overflow-auto p-8">
-      <header className="mb-6">
-        <p className="text-xs font-medium uppercase tracking-widest text-muted-app">Exports</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Your exported files</h1>
+      <header className="mb-6 flex items-end justify-between gap-4">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-widest text-muted-app">Exports</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Your exported files</h1>
+        </div>
+        <button
+          type="button"
+          onClick={() => void window.novarec.revealRecordings()}
+          title="Open the folder holding raw and recovered recordings"
+          className="shrink-0 rounded-lg bg-surface2 px-3 py-2 text-sm font-medium text-app2 transition hover:text-app"
+        >
+          Reveal recordings folder
+        </button>
       </header>
 
       <div className="max-w-3xl space-y-6">

@@ -48,6 +48,7 @@ export class SegmentWriter {
 
   private readonly events: ManifestEvent[] = [];
   private nextIndex = 0;
+  private sealed = 0;
   private elapsedMs = 0;
   private open: OpenSegment | null = null;
   private initSegment: string | null = null;
@@ -65,6 +66,12 @@ export class SegmentWriter {
 
   get state(): ManifestState {
     return reduceEvents(this.events);
+  }
+
+  /** Sealed-segment count, tracked incrementally (avoids reducing the whole
+   * manifest on every fragment during a long recording). */
+  get sealedSegmentCount(): number {
+    return this.sealed;
   }
 
   async start(initBytes?: Uint8Array): Promise<void> {
@@ -146,6 +153,7 @@ export class SegmentWriter {
       durationMs: segment.durationMs,
       bytes: segment.bytes,
     });
+    this.sealed += 1;
   }
 
   private async append(event: ManifestEvent): Promise<void> {

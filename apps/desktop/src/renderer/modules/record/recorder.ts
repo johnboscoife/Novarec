@@ -16,6 +16,14 @@ const VIDEO_MIME = [
 ];
 const AUDIO_MIME = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'];
 const TIMESLICE_MS = 1000;
+// A capture is "stalled" if no chunk arrives for this long (well past the 1s
+// timeslice, allowing for a badly loaded machine). Stop must never hang, so the
+// wait for MediaRecorder.onstop and the final write flush are both time-capped.
+const STALL_TIMEOUT_MS = 8000;
+const STOP_TIMEOUT_MS = 3000;
+const QUEUE_FLUSH_TIMEOUT_MS = 6000;
+
+const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 function pickMime(candidates: string[]): string | null {
   for (const mime of candidates) {
@@ -87,10 +95,13 @@ class TrackRecorder {
   private recorder: MediaRecorder | null = null;
   private lastChunkAt = 0;
   private queue: Promise<void> = Promise.resolve();
+  private watchdog: number | null = null;
+  private stalled = false;
 
   constructor(
     private readonly recordingId: string,
     private readonly trackId: string,
+    private readonly label: string,
     private readonly stream: MediaStream,
     private readonly isVideo: boolean,
     private readonly onError: (message: string) => void,
@@ -101,9 +112,21 @@ class TrackRecorder {
     const mime = pickMime(this.isVideo ? VIDEO_MIME : AUDIO_MIME);
     this.recorder = new MediaRecorder(this.stream, mime ? { mimeType: mime } : undefined);
     this.recorder.ondataavailable = (event) => this.enqueue(event.data);
-    this.recorder.onerror = () => this.onError(`Track ${this.trackId} reported an error`);
+    this.recorder.onerror = () => this.onError(`${this.label} reported an error`);
     this.lastChunkAt = performance.now();
     this.recorder.start(TIMESLICE_MS);
+    // Watchdog: warn (once) if the source stops producing data, so a dead
+    // capture doesn't masquerade as a healthy recording.
+    this.watchdog = window.setInterval(() => {
+      if (!this.recorder || this.recorder.state !== 'recording') return;
+      if (!this.stalled && performance.now() - this.lastChunkAt > STALL_TIMEOUT_MS) {
+        this.stalled = true;
+        this.onError(
+          `${this.label} stopped producing data — the capture source may have stalled. ` +
+            'You can stop; footage captured so far is saved.',
+        );
+      }
+    }, 2000);
   }
 
   private enqueue(blob: Blob): void {
@@ -111,6 +134,7 @@ class TrackRecorder {
     const now = performance.now();
     const durationMs = Math.max(0, now - this.lastChunkAt);
     this.lastChunkAt = now;
+    this.stalled = false;
     this.queue = this.queue.then(async () => {
       try {
         const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -144,13 +168,33 @@ class TrackRecorder {
   }
 
   async stop(): Promise<void> {
+    if (this.watchdog !== null) {
+      window.clearInterval(this.watchdog);
+      this.watchdog = null;
+    }
     const recorder = this.recorder;
     if (recorder) {
+      // A stalled MediaRecorder may never fire onstop — never wait forever.
       await new Promise<void>((resolve) => {
-        recorder.onstop = () => resolve();
-        recorder.stop();
+        let settled = false;
+        let timer = 0;
+        const finish = (): void => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timer);
+          resolve();
+        };
+        timer = window.setTimeout(finish, STOP_TIMEOUT_MS);
+        recorder.onstop = finish;
+        try {
+          recorder.stop();
+        } catch {
+          finish();
+        }
       });
-      await this.queue;
+      // Flush pending writes, but don't block stop if a write is wedged; the
+      // sealed segments are already durable on disk.
+      await Promise.race([this.queue, delay(QUEUE_FLUSH_TIMEOUT_MS)]);
     }
     this.stream.getTracks().forEach((t) => t.stop());
   }
@@ -247,6 +291,7 @@ export class MultiTrackRecorder {
         const recorder = new TrackRecorder(
           recordingId,
           config.id,
+          config.label,
           stream,
           isVideo,
           this.callbacks.onError,

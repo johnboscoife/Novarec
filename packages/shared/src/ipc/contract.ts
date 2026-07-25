@@ -154,6 +154,8 @@ export const ipcContract = {
   'recording:stop': { request: RecordingAt, response: RecordingSummarySchema },
   'recording:listOrphans': { request: z.void(), response: z.array(OrphanedRecordingSchema) },
   'recording:recover': { request: z.object({ dir: z.string() }), response: RecoveryResultSchema },
+  // Open the recordings vault (raw segments + recovered files) in the OS.
+  'recording:revealVault': { request: z.void(), response: Ok },
 
   // --- Export (Phase 7) --- finalize tracks and run FFmpeg into one file.
   'export:run': {

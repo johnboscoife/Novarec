@@ -33,6 +33,7 @@ const api: NovaRecApi = {
   stopRecording: (payload) => ipcRenderer.invoke('recording:stop', payload),
   listOrphans: () => ipcRenderer.invoke('recording:listOrphans'),
   recoverRecording: (payload) => ipcRenderer.invoke('recording:recover', payload),
+  revealRecordings: () => ipcRenderer.invoke('recording:revealVault'),
 
   runExport: (payload) => ipcRenderer.invoke('export:run', payload),
   revealPath: (payload) => ipcRenderer.invoke('shell:reveal', payload),
