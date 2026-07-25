@@ -22,6 +22,10 @@ const TIMESLICE_MS = 1000;
 const STALL_TIMEOUT_MS = 8000;
 const STOP_TIMEOUT_MS = 3000;
 const QUEUE_FLUSH_TIMEOUT_MS = 6000;
+// Backpressure: warn if unwritten fragments pile up in memory (disk can't keep
+// up). ~40 chunks ≈ 40s of buffered footage, or a hard 512 MB ceiling.
+const MAX_PENDING_CHUNKS = 40;
+const MAX_PENDING_BYTES = 512 * 1024 * 1024;
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -102,6 +106,9 @@ class TrackRecorder {
   private queue: Promise<void> = Promise.resolve();
   private watchdog: number | null = null;
   private stalled = false;
+  private pendingChunks = 0;
+  private pendingBytes = 0;
+  private backpressured = false;
 
   constructor(
     private readonly recordingId: string,
@@ -140,6 +147,20 @@ class TrackRecorder {
     const durationMs = Math.max(0, now - this.lastChunkAt);
     this.lastChunkAt = now;
     this.stalled = false;
+
+    this.pendingChunks += 1;
+    this.pendingBytes += blob.size;
+    if (
+      !this.backpressured &&
+      (this.pendingChunks > MAX_PENDING_CHUNKS || this.pendingBytes > MAX_PENDING_BYTES)
+    ) {
+      this.backpressured = true;
+      this.onError(
+        `${this.label}: the disk can't keep up with capture — footage is buffering in memory. ` +
+          'Stop soon (or lower the frame rate / free disk space) to avoid dropped frames.',
+      );
+    }
+
     this.queue = this.queue.then(async () => {
       try {
         const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -152,6 +173,12 @@ class TrackRecorder {
         this.onSegment(segmentCount);
       } catch (error) {
         this.onError(error instanceof Error ? error.message : 'Failed to write a segment');
+      } finally {
+        this.pendingChunks -= 1;
+        this.pendingBytes -= blob.size;
+        if (this.backpressured && this.pendingChunks <= MAX_PENDING_CHUNKS / 2) {
+          this.backpressured = false; // drained — allow a fresh warning if it recurs
+        }
       }
     });
   }
