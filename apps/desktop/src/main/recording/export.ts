@@ -6,7 +6,7 @@ import type { ExportSettings } from '@novarec/shared';
 import { ffmpegBinaryPath } from '../ffmpeg-path.js';
 import { loadAppSettings } from '../app-settings-store.js';
 import { addHistoryEntry } from '../export-history-store.js';
-import { deleteRawRecording } from './session.js';
+import { deleteRawRecording, recordingsVault } from './session.js';
 
 /**
  * Export a finished recording: finalize each track (concat its sealed fMP4
@@ -14,10 +14,6 @@ import { deleteRawRecording } from './session.js';
  * written to the user's export folder (default <Videos>/NovaRec), recorded in
  * export history, and optionally followed by deleting the raw segments.
  */
-function vault(): string {
-  return join(app.getPath('userData'), 'recordings');
-}
-
 async function trackDirs(recordingDir: string): Promise<string[]> {
   try {
     const entries = await readdir(recordingDir, { withFileTypes: true });
@@ -73,7 +69,7 @@ export async function runExport(
   onProgress?: (elapsedMs: number, totalMs: number) => void,
 ): Promise<{ outputPath: string; durationMs: number }> {
   // Security: only export recordings inside our own vault.
-  if (!resolve(recordingDir).startsWith(resolve(vault()))) {
+  if (!resolve(recordingDir).startsWith(resolve(recordingsVault()))) {
     throw new Error('Refusing to export a path outside the recordings vault');
   }
 

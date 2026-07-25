@@ -5,6 +5,7 @@
  */
 let recordingActive = false;
 let confirmOnExit = true;
+let storageLocation: string | null = null;
 
 export function setRecordingActive(active: boolean): void {
   recordingActive = active;
@@ -18,4 +19,12 @@ export function setConfirmOnExit(value: boolean): void {
 }
 export function shouldConfirmExit(): boolean {
   return confirmOnExit;
+}
+
+/** Custom recordings folder (null = default app-data vault). */
+export function setStorageLocation(location: string | null): void {
+  storageLocation = location;
+}
+export function getStorageLocation(): string | null {
+  return storageLocation;
 }

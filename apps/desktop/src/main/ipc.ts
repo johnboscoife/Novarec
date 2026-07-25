@@ -27,7 +27,7 @@ import {
   dispatchCommand,
   pushControlState,
 } from './overlays/controls-window.js';
-import { setConfirmOnExit, setRecordingActive } from './app-state.js';
+import { setConfirmOnExit, setRecordingActive, setStorageLocation } from './app-state.js';
 import { buildAccessToken, grantForRoom } from './meet/livekit-token.js';
 import { loadCaptureSettings, saveCaptureSettings } from './settings-store.js';
 import {
@@ -202,7 +202,7 @@ export function registerIpcHandlers(): void {
 
   handleChannel('export:chooseFolder', async () => {
     const result = await dialog.showOpenDialog({
-      title: 'Choose export folder',
+      title: 'Select a folder',
       properties: ['openDirectory', 'createDirectory'],
     });
     const picked = result.canceled ? null : (result.filePaths[0] ?? null);
@@ -221,6 +221,7 @@ export function registerIpcHandlers(): void {
   handleChannel('settings:save', async (req) => {
     const saved = await saveAppSettings(req);
     setConfirmOnExit(saved.confirmOnExit); // keep the sync exit-guard current
+    setStorageLocation(saved.storageLocation); // keep the vault path current
     return saved;
   });
 

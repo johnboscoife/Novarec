@@ -18,6 +18,7 @@ import {
   type RecoveryResult,
   type TrackConfig,
 } from '@novarec/shared';
+import { getStorageLocation } from '../app-state.js';
 
 /**
  * Multi-track recording. Each enabled track is an independent, durable
@@ -36,7 +37,11 @@ interface Session {
 const sessions = new Map<string, Session>();
 
 function vault(): string {
-  return join(app.getPath('userData'), 'recordings');
+  // A user-chosen storage folder (Settings → Storage) overrides the default
+  // app-data vault. Read from the synchronous cache so all vault-scoped checks
+  // stay sync. New recordings land here; existing ones stay where they were.
+  const custom = getStorageLocation();
+  return custom ?? join(app.getPath('userData'), 'recordings');
 }
 
 /** The recordings vault path, so the UI can reveal it in the file manager. */

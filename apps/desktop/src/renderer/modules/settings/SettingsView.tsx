@@ -100,11 +100,39 @@ export function SettingsView(): ReactElement {
         </Panel>
 
         <Panel title="Storage">
-          <Row label="Location" hint="Where recordings are stored.">
-            <span className="text-sm text-muted-app">
-              {current.storageLocation ?? 'Default (app data folder)'}
-            </span>
-          </Row>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-sm text-app2">Recordings location</div>
+              <div className="mt-0.5 truncate text-xs leading-relaxed text-muted-app">
+                {current.storageLocation ?? 'Default — the app data folder'}
+              </div>
+              <div className="mt-0.5 text-xs text-dim-app">
+                New recordings go here; existing ones stay where they were.
+              </div>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              {current.storageLocation && (
+                <button
+                  type="button"
+                  onClick={() => update({ storageLocation: null })}
+                  className="rounded-lg bg-surface2 px-3 py-2 text-sm text-muted-app transition hover:text-app2"
+                >
+                  Reset
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() =>
+                  void window.novarec.chooseExportFolder().then(({ path }) => {
+                    if (path) update({ storageLocation: path });
+                  })
+                }
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-500"
+              >
+                Change…
+              </button>
+            </div>
+          </div>
         </Panel>
 
         {GOOGLE_MEET_ENABLED && <GoogleAccountPanel current={current} onSave={update} />}

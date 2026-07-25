@@ -6,7 +6,12 @@ import { registerHotkeys, unregisterHotkeys } from './hotkeys.js';
 import { installDisplayMediaHandler } from './capture/display-media.js';
 import { setHostWindow, hideControls } from './overlays/controls-window.js';
 import { hideWebcam } from './overlays/webcam-window.js';
-import { isRecordingActive, setConfirmOnExit, shouldConfirmExit } from './app-state.js';
+import {
+  isRecordingActive,
+  setConfirmOnExit,
+  setStorageLocation,
+  shouldConfirmExit,
+} from './app-state.js';
 import { loadAppSettings, saveAppSettings } from './app-settings-store.js';
 
 const isDev = !app.isPackaged;
@@ -120,7 +125,10 @@ app
     installDisplayMediaHandler(); // modern getDisplayMedia screen capture
     registerIpcHandlers();
     registerHotkeys(); // system-wide, works even when NovaRec is unfocused
-    void loadAppSettings().then((s) => setConfirmOnExit(s.confirmOnExit)); // seed exit guard
+    void loadAppSettings().then((s) => {
+      setConfirmOnExit(s.confirmOnExit); // seed exit guard
+      setStorageLocation(s.storageLocation); // seed the recordings vault location
+    });
     setHostWindow(createMainWindow());
 
     app.on('activate', () => {
