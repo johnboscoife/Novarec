@@ -32,7 +32,7 @@ npmRebuild: false
 publish:
   provider: github
   owner: johnboscoife
-  repo: novarec
+  repo: Novarec
   releaseType: release
 
 win:
