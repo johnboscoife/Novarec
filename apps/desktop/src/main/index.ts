@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { app, BrowserWindow, dialog, shell } from 'electron';
+import { app, BrowserWindow, dialog, session, shell } from 'electron';
 import { registerIpcHandlers } from './ipc.js';
 import { installContentSecurityPolicy } from './security.js';
 import { registerHotkeys, unregisterHotkeys } from './hotkeys.js';
@@ -13,6 +13,7 @@ import {
   shouldConfirmExit,
 } from './app-state.js';
 import { loadAppSettings, saveAppSettings } from './app-settings-store.js';
+import { initAutoUpdate } from './auto-update.js';
 
 const isDev = !app.isPackaged;
 
@@ -55,6 +56,27 @@ function createMainWindow(): BrowserWindow {
 
   window.on('ready-to-show', () => window.show());
 
+  // Lock the top frame to the app: a navigation to attacker-controlled content
+  // (a rendered link, a location.href, an HTTP redirect) would otherwise hand
+  // that page the entire contextBridge IPC surface. The SPA never navigates, so
+  // anything trying to is untrusted — cancel it, and send real web links to the
+  // OS browser like window.open already does.
+  const sameOrigin = (a: string, b: string): boolean => {
+    try {
+      return new URL(a).origin === new URL(b).origin;
+    } catch {
+      return a === b;
+    }
+  };
+  const guardNavigation = (event: Electron.Event, targetUrl: string): void => {
+    if (!sameOrigin(targetUrl, window.webContents.getURL())) {
+      event.preventDefault();
+      if (/^https?:\/\//i.test(targetUrl)) void shell.openExternal(targetUrl);
+    }
+  };
+  window.webContents.on('will-navigate', guardNavigation);
+  window.webContents.on('will-redirect', guardNavigation);
+
   // Exit-intent confirmation. Skipped for programmatic quits (tests, OS
   // shutdown) so nothing hangs waiting on a dialog. Always tears down the
   // floating overlays so the webcam preview can't outlive the app.
@@ -94,13 +116,42 @@ function createMainWindow(): BrowserWindow {
   });
 
   // Recover from a renderer/GPU crash (e.g. during heavy screen capture) by
-  // reloading, instead of leaving a black window.
+  // reloading — but a deterministic startup crash (bad GPU driver) would loop
+  // forever, pinning the CPU. Cap the reloads in a rolling window and, past the
+  // cap, show a recovery dialog instead of reloading again.
+  let crashTimes: number[] = [];
   window.webContents.on('render-process-gone', (_event, details) => {
     console.error('Renderer process gone:', details.reason);
-    if (details.reason !== 'clean-exit' && !window.isDestroyed()) window.reload();
+    if (details.reason === 'clean-exit' || window.isDestroyed()) return;
+    const now = Date.now();
+    crashTimes = crashTimes.filter((t) => now - t < 60_000);
+    crashTimes.push(now);
+    if (crashTimes.length > 3) {
+      void dialog
+        .showMessageBox(window, {
+          type: 'error',
+          buttons: ['Quit', 'Try again'],
+          defaultId: 0,
+          noLink: true,
+          title: 'NovaRec keeps crashing',
+          message: 'NovaRec’s display crashed repeatedly.',
+          detail:
+            'This is often a graphics-driver issue. Try updating your GPU driver, or relaunch to try again.',
+        })
+        .then((r) => {
+          crashTimes = [];
+          if (r.response === 1 && !window.isDestroyed()) window.reload();
+          else app.quit();
+        });
+      return;
+    }
+    window.reload();
   });
   window.webContents.on('unresponsive', () => {
-    if (!window.isDestroyed()) window.webContents.reload();
+    // Never kill a live recording on a transient main-thread hang (a heavy
+    // synchronous op) — the reload would destroy the in-flight recorder.
+    if (isRecordingActive() || window.isDestroyed()) return;
+    window.webContents.reload();
   });
 
   // External links open in the OS browser, never inside the app.
@@ -122,6 +173,13 @@ app
   .whenReady()
   .then(() => {
     installContentSecurityPolicy(isDev);
+    // NovaRec only needs camera/mic (getUserMedia) and screen capture (handled
+    // separately by the display-media handler). Electron's default auto-approves
+    // every permission — lock it down so a navigated/compromised page can't grab
+    // geolocation, notifications, etc.
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+      callback(permission === 'media');
+    });
     installDisplayMediaHandler(); // modern getDisplayMedia screen capture
     registerIpcHandlers();
     registerHotkeys(); // system-wide, works even when NovaRec is unfocused
@@ -130,6 +188,7 @@ app
       setStorageLocation(s.storageLocation); // seed the recordings vault location
     });
     setHostWindow(createMainWindow());
+    initAutoUpdate(); // checks for updates in packaged builds with a feed configured
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) setHostWindow(createMainWindow());

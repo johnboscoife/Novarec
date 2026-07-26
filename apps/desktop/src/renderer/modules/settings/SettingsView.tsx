@@ -123,9 +123,11 @@ export function SettingsView(): ReactElement {
               <button
                 type="button"
                 onClick={() =>
-                  void window.novarec.chooseExportFolder().then(({ path }) => {
-                    if (path) update({ storageLocation: path });
-                  })
+                  void window.novarec
+                    .chooseExportFolder({ defaultPath: current.storageLocation })
+                    .then(({ path }) => {
+                      if (path) update({ storageLocation: path });
+                    })
                 }
                 className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-500"
               >
@@ -164,7 +166,9 @@ function GoogleAccountPanel({
   onSave: (patch: Partial<AppSettings>) => void;
 }): ReactElement {
   const [clientId, setClientId] = useState(current.googleClientId ?? '');
-  const [clientSecret, setClientSecret] = useState(current.googleClientSecret ?? '');
+  // Redacted by main — start blank, overwrite only on a real edit.
+  const [clientSecret, setClientSecret] = useState('');
+  const hasClientSecret = Boolean(current.googleClientSecret);
 
   return (
     <Panel title="Google account (Meet)">
@@ -227,8 +231,10 @@ function GoogleAccountPanel({
             type="password"
             value={clientSecret}
             onChange={(e) => setClientSecret(e.target.value)}
-            onBlur={() => onSave({ googleClientSecret: clientSecret.trim() || null })}
-            placeholder="GOCSPX-…"
+            onBlur={() => {
+              if (clientSecret.trim()) onSave({ googleClientSecret: clientSecret.trim() });
+            }}
+            placeholder={hasClientSecret ? 'Saved — type to replace' : 'GOCSPX-…'}
             spellCheck={false}
             className="w-full rounded-md bg-surface2 px-3 py-2 text-sm text-app placeholder:text-dim-app"
           />
@@ -247,7 +253,10 @@ function MeetingsPanel({
 }): ReactElement {
   const [url, setUrl] = useState(current.livekitUrl ?? '');
   const [key, setKey] = useState(current.livekitApiKey ?? '');
-  const [secret, setSecret] = useState(current.livekitApiSecret ?? '');
+  // The secret is redacted by main and never sent here — start blank and only
+  // overwrite when the user actually types a replacement.
+  const [secret, setSecret] = useState('');
+  const hasSecret = Boolean(current.livekitApiSecret);
 
   return (
     <Panel title="Meetings (LiveKit)">
@@ -292,8 +301,10 @@ function MeetingsPanel({
             type="password"
             value={secret}
             onChange={(e) => setSecret(e.target.value)}
-            onBlur={() => onSave({ livekitApiSecret: secret.trim() || null })}
-            placeholder="secret…"
+            onBlur={() => {
+              if (secret.trim()) onSave({ livekitApiSecret: secret.trim() });
+            }}
+            placeholder={hasSecret ? 'Saved — type to replace' : 'secret…'}
             spellCheck={false}
             className="w-full rounded-md bg-surface2 px-3 py-2 text-sm text-app placeholder:text-dim-app"
           />

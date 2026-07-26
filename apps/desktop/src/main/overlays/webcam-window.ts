@@ -9,10 +9,35 @@ import type { WebcamShape } from '@novarec/shared';
  * webcam ends up baked into the recording exactly where, how big, and what shape
  * the user left it — the export matches for free, even if it was moved mid-take.
  */
+interface Bounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 interface WebcamConfig {
   deviceId: string | null;
   shape: WebcamShape;
   sizePx: number;
+  displayBounds?: Bounds | null;
+}
+
+/** Keep a size×size window fully inside `area`, anchored bottom-right by default. */
+function placeInside(area: Bounds, size: number): { x: number; y: number } {
+  return {
+    x: Math.round(area.x + area.width - size - 40),
+    y: Math.round(area.y + area.height - size - 96),
+  };
+}
+
+function isInside(area: Bounds, x: number, y: number, size: number): boolean {
+  return (
+    x >= area.x &&
+    y >= area.y &&
+    x + size <= area.x + area.width &&
+    y + size <= area.y + area.height
+  );
 }
 
 const isDev = !app.isPackaged;
@@ -34,19 +59,26 @@ function loadOverlayRoute(win: BrowserWindow, params: Record<string, string>): v
 
 export function showWebcam(config: WebcamConfig): void {
   const size = Math.round(Math.max(MIN_SIZE, Math.min(MAX_SIZE, config.sizePx)));
+  const captured = config.displayBounds ?? null;
 
   if (overlay && !overlay.isDestroyed()) {
-    const [x = 0, y = 0] = overlay.getPosition();
+    let [x = 0, y = 0] = overlay.getPosition();
+    // If we're now capturing a different monitor and the overlay isn't on it,
+    // pull it onto the captured display — otherwise it won't be in the recording.
+    if (captured && !isInside(captured, x, y, size)) {
+      ({ x, y } = placeInside(captured, size));
+      lastPosition = { x, y };
+    }
     overlay.setBounds({ x, y, width: size, height: size });
     overlay.webContents.send('webcam:config', config);
     return;
   }
 
-  const work = screen.getPrimaryDisplay().workArea;
-  const position = lastPosition ?? {
-    x: work.x + work.width - size - 40,
-    y: work.y + work.height - size - 96,
-  };
+  // Open on the captured display if known, else the primary work area.
+  const area = captured ?? screen.getPrimaryDisplay().workArea;
+  const onCaptured =
+    lastPosition && isInside(area, lastPosition.x, lastPosition.y, size) ? lastPosition : null;
+  const position = onCaptured ?? placeInside(area, size);
 
   const win = new BrowserWindow({
     x: position.x,

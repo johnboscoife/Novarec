@@ -119,6 +119,18 @@ export const ipcContract = {
       deviceId: z.string().nullable(),
       shape: WebcamShapeSchema,
       sizePx: z.number().int().positive(),
+      // DIP bounds of the display being captured, so the overlay is placed ON
+      // that monitor — a floating webcam only ends up in the recording if it
+      // sits on the captured screen. Null = leave on the primary display.
+      displayBounds: z
+        .object({
+          x: z.number(),
+          y: z.number(),
+          width: z.number(),
+          height: z.number(),
+        })
+        .nullable()
+        .default(null),
     }),
     response: Ok,
   },
@@ -164,8 +176,12 @@ export const ipcContract = {
   },
   // Reveal a produced file in the OS file manager.
   'shell:reveal': { request: z.object({ path: z.string() }), response: Ok },
-  // Pick the destination folder for exports.
-  'export:chooseFolder': { request: z.void(), response: z.object({ path: z.string().nullable() }) },
+  // Pick a folder (exports or recordings storage). `defaultPath` is where the
+  // dialog opens — the current folder, so it doesn't jump to Downloads.
+  'export:chooseFolder': {
+    request: z.object({ defaultPath: z.string().nullable() }),
+    response: z.object({ path: z.string().nullable() }),
+  },
   // Export history (produced files) — list, rename the file, remove an entry.
   'export:history': { request: z.void(), response: z.array(ExportHistoryEntrySchema) },
   'export:rename': {

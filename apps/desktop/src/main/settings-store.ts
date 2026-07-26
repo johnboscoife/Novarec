@@ -1,4 +1,5 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { readFile, rename, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { app } from 'electron';
 import {
@@ -31,6 +32,9 @@ export async function saveCaptureSettings(settings: CaptureSettings): Promise<Ca
   const validated = CaptureSettingsSchema.parse(settings);
   const file = settingsFile();
   await mkdir(dirname(file), { recursive: true });
-  await writeFile(file, JSON.stringify(validated, null, 2), 'utf8');
+  // Atomic write (temp + rename) so a crash can't leave truncated JSON.
+  const tmp = `${file}.${randomUUID()}.tmp`;
+  await writeFile(tmp, JSON.stringify(validated, null, 2), 'utf8');
+  await rename(tmp, file);
   return validated;
 }

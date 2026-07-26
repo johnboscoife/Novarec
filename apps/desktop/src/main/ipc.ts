@@ -45,7 +45,12 @@ import {
 } from './recording/session.js';
 import { runExport } from './recording/export.js';
 import { listHistory, removeHistory, renameHistory } from './export-history-store.js';
-import { loadAppSettings, saveAppSettings } from './app-settings-store.js';
+import {
+  loadAppSettings,
+  saveAppSettings,
+  redactSecrets,
+  restoreSecrets,
+} from './app-settings-store.js';
 import {
   signIn as googleSignIn,
   signOut as googleSignOut,
@@ -200,9 +205,11 @@ export function registerIpcHandlers(): void {
     return { ok: true as const };
   });
 
-  handleChannel('export:chooseFolder', async () => {
+  handleChannel('export:chooseFolder', async (req) => {
     const result = await dialog.showOpenDialog({
       title: 'Select a folder',
+      // Open at the current folder (falling back to Videos), not the OS default.
+      defaultPath: req.defaultPath ?? app.getPath('videos'),
       properties: ['openDirectory', 'createDirectory'],
     });
     const picked = result.canceled ? null : (result.filePaths[0] ?? null);
@@ -216,13 +223,16 @@ export function registerIpcHandlers(): void {
     freedBytes: await deleteRawRecording(req.dir),
   }));
 
-  // --- App settings (Phase 10) ---
-  handleChannel('settings:get', () => loadAppSettings());
+  // --- App settings (Phase 10) --- secrets are redacted before they reach the
+  // renderer, and the stored value is restored when the renderer saves back the
+  // placeholder, so LiveKit/Google secrets never live in renderer memory.
+  handleChannel('settings:get', async () => redactSecrets(await loadAppSettings()));
   handleChannel('settings:save', async (req) => {
-    const saved = await saveAppSettings(req);
+    const stored = await loadAppSettings();
+    const saved = await saveAppSettings(restoreSecrets(req, stored));
     setConfirmOnExit(saved.confirmOnExit); // keep the sync exit-guard current
     setStorageLocation(saved.storageLocation); // keep the vault path current
-    return saved;
+    return redactSecrets(saved);
   });
 
   // --- Google account (Meet) ---

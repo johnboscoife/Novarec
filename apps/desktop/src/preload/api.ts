@@ -65,7 +65,9 @@ export interface NovaRecApi {
   openExternal(
     payload: IpcRequest<'shell:openExternal'>,
   ): Promise<IpcResponse<'shell:openExternal'>>;
-  chooseExportFolder(): Promise<IpcResponse<'export:chooseFolder'>>;
+  chooseExportFolder(
+    payload: IpcRequest<'export:chooseFolder'>,
+  ): Promise<IpcResponse<'export:chooseFolder'>>;
   exportHistory(): Promise<IpcResponse<'export:history'>>;
   renameExport(payload: IpcRequest<'export:rename'>): Promise<IpcResponse<'export:rename'>>;
   removeExport(

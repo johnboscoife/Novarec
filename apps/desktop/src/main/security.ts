@@ -12,12 +12,18 @@ const PROD_CSP = [
   "img-src 'self' data: blob:",
   "media-src 'self' blob:",
   "font-src 'self' data:",
-  // https:/wss: allow the user's LiveKit server (meetings) to be reached; all
-  // other fetch/socket targets stay blocked by default-src.
+  // https:/wss: are required so a user's LiveKit server (any host they configure)
+  // and its TURN/region endpoints are reachable — they can't be enumerated at
+  // build time. This is broad, but the risk is contained: script-src 'self' plus
+  // the navigation lock (main/index.ts) block injected/attacker code, and secrets
+  // (LiveKit/Google) are never handed to the renderer, so there's nothing here to
+  // exfiltrate. Accepted tradeoff for the meetings feature.
   "connect-src 'self' https: wss:",
   "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'none'",
+  "frame-src 'none'", // the app embeds no iframes
+  "form-action 'none'", // no form ever POSTs anywhere
   "frame-ancestors 'none'",
 ].join('; ');
 
