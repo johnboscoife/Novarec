@@ -1,8 +1,12 @@
 name: Release
 
-# Builds platform installers when a version tag is pushed (e.g. v0.1.0) and
-# attaches them to a GitHub Release. Code signing is opt-in via secrets (see
-# the commented env below); without them the artifacts are unsigned.
+# Push a version tag (e.g. v0.0.32, matching apps/desktop/package.json) and this
+# builds the Windows installer and publishes it — plus the latest.yml update
+# metadata electron-updater needs — to a DRAFT GitHub Release. Review the draft,
+# then hit "Publish release" so installed apps auto-update to it on next launch.
+#
+# Code signing is optional (unsigned builds show a SmartScreen warning on first
+# run). Add the CSC_* secrets below to sign.
 
 on:
   push:
@@ -13,13 +17,9 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build installer (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+  release:
+    name: Build & publish Windows installer
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -34,49 +34,18 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Quality gate
-        run: pnpm typecheck && pnpm lint && pnpm test
+        run: pnpm typecheck; pnpm lint; pnpm test
 
-      - name: Build installer
-        run: pnpm --filter @novarec/desktop build
+      - name: Build & publish to GitHub Releases
+        # electron-builder creates/updates a DRAFT release for this tag and
+        # uploads the .exe, its .blockmap, and latest.yml (the update feed).
+        run: pnpm --filter @novarec/desktop release
         env:
-          # --- Code signing (optional) — add these as repository secrets. ---
-          # Windows:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # --- Code signing (optional) — add as repository secrets to enable. ---
           # CSC_LINK: ${{ secrets.WINDOWS_CERT_BASE64 }}
           # CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
-          # macOS (signing + notarization):
-          # CSC_LINK: ${{ secrets.MAC_CERT_BASE64 }}
-          # CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: novarec-${{ matrix.os }}
-          path: |
-            apps/desktop/release/**/*.exe
-            apps/desktop/release/**/*.dmg
-            apps/desktop/release/**/*.AppImage
-            apps/desktop/release/**/*.deb
-          if-no-files-found: ignore
-
-  publish:
-    name: Publish GitHub Release
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          generate_release_notes: true
-          files: artifacts/**/*

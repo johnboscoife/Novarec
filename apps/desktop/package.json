@@ -9,6 +9,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build && electron-builder --win --publish never",
     "build:dir": "electron-vite build && electron-builder --dir",
+    "release": "electron-vite build && electron-builder --win --publish always",
     "start": "electron-vite preview",
     "make-icon": "node scripts/make-icon.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false"

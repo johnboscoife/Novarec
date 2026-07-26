@@ -24,16 +24,16 @@ asarUnpack:
   - node_modules/ffmpeg-static/**
 npmRebuild: false
 
-# Auto-updates are WIRED in the app (src/main/auto-update.ts) but INERT until a
-# release feed exists. To enable: (1) uncomment a `publish` provider below and
-# fill in your hosting, (2) add `node_modules/electron-updater/**` (and its deps)
-# to `files` so the module is packaged, then build & publish. electron-builder
-# will emit app-update.yml and the app will auto-check on launch. Until then the
-# updater no-ops (no failed network calls), so it's safe to ship as-is.
-# publish:
-#   provider: github        # or: generic (with a `url:`), s3, spaces, …
-#   owner: your-org
-#   repo: novarec
+# Auto-updates: releases are published to GitHub Releases; electron-builder emits
+# app-update.yml into resources, and the app (src/main/auto-update.ts) checks it
+# on launch. electron-updater and its deps are already packaged (they're
+# production dependencies, so electron-builder includes them automatically).
+# The releases repo is public, so updates download without any embedded token.
+publish:
+  provider: github
+  owner: johnboscoife
+  repo: novarec
+  releaseType: release
 
 win:
   icon: build/icon.png
