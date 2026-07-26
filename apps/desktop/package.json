@@ -1,6 +1,6 @@
 {
   "name": "@novarec/desktop",
-  "version": "0.0.30",
+  "version": "0.0.32",
   "private": true,
   "description": "NovaRec — record, meet, and stream from one shared capture engine.",
   "author": "NovaRec",
