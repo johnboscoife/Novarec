@@ -37,8 +37,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Quality gate
-        run: pnpm typecheck; pnpm lint; pnpm test
+      - name: Type-check
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests
+        run: pnpm test
 
       - name: Build & publish to GitHub Releases
         # electron-builder creates/updates a DRAFT release for this tag and
