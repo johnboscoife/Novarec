@@ -96,6 +96,10 @@ export function reduceEvents(events: readonly ManifestEvent[]): ManifestState {
     segments: [],
     stopped: false,
   };
+  // Index segments by their index so sealing is O(1) — a long session has tens
+  // of thousands of segments and a linear find-per-seal is O(n²) (seconds of
+  // stall at stop/recovery).
+  const byIndex = new Map<number, SegmentState>();
 
   for (const event of events) {
     switch (event.type) {
@@ -106,18 +110,21 @@ export function reduceEvents(events: readonly ManifestEvent[]): ManifestState {
         state.initSegment = event.initSegment;
         state.status = 'recording';
         break;
-      case 'segment-open':
-        state.segments.push({
+      case 'segment-open': {
+        const seg: SegmentState = {
           index: event.index,
           path: event.path,
           startMs: event.startMs,
           durationMs: 0,
           bytes: 0,
           sealed: false,
-        });
+        };
+        state.segments.push(seg);
+        byIndex.set(event.index, seg);
         break;
+      }
       case 'segment-seal': {
-        const seg = state.segments.find((s) => s.index === event.index);
+        const seg = byIndex.get(event.index);
         if (seg) {
           seg.durationMs = event.durationMs;
           seg.bytes = event.bytes;

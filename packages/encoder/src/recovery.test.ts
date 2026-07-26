@@ -56,6 +56,26 @@ describe('crash recovery', () => {
     expect(await scanForOrphans(vault)).toHaveLength(0);
   });
 
+  it('labels a WebM-fallback recording .webm, not .mp4', async () => {
+    const vault = await tempVault();
+    const dir = join(vault, 'webm');
+    const writer = new SegmentWriter({
+      dir,
+      recordingId: 'webm',
+      createdAt,
+      targetDurationMs: 100,
+    });
+    // EBML magic (0x1A45DFA3) — what MediaRecorder writes when it falls back to
+    // WebM on a host that can't record MP4, despite the .mp4 segment names.
+    await writer.start(new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0x00]));
+    for (let i = 0; i < 6; i += 1) await writer.writeFragment(frag(50), 40);
+
+    const [orphan] = await scanForOrphans(vault);
+    if (!orphan) throw new Error('expected one orphan');
+    const result = await recoverRecording(orphan.dir);
+    expect(result.outputPath.endsWith('.webm')).toBe(true);
+  });
+
   it('drops the torn, unsealed trailing segment', async () => {
     const vault = await tempVault();
     const dir = join(vault, 'rec2');

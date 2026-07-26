@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { readdir, rm, stat } from 'node:fs/promises';
-import { basename, join, resolve } from 'node:path';
+import { basename, join, resolve, sep } from 'node:path';
 import { app } from 'electron';
 import {
   DiskFullError,
@@ -35,6 +35,19 @@ interface Session {
 }
 
 const sessions = new Map<string, Session>();
+// Remember recently finalized recordings so a Stop that arrives after an
+// internal auto-finalize (disk-full, or a double-stop) resolves with the real
+// summary instead of throwing and wedging the UI. Bounded — recordings are few.
+const finalizedSummaries = new Map<string, RecordingSummary>();
+const MAX_REMEMBERED = 24;
+
+/** True if `dir` is the vault root or strictly inside it (separator-anchored,
+ * so a sibling like `<vault>-backup` can't pass a bare prefix check). */
+export function isInsideVault(dir: string): boolean {
+  const root = resolve(vault());
+  const target = resolve(dir);
+  return target === root || target.startsWith(root + sep);
+}
 
 function vault(): string {
   // A user-chosen storage folder (Settings → Storage) overrides the default
@@ -153,6 +166,20 @@ export async function resumeRecording(recordingId: string, atMs: number): Promis
 }
 
 export async function stopRecording(recordingId: string, atMs: number): Promise<RecordingSummary> {
+  // Idempotent: a session that was already finalized (e.g. auto-finalized on a
+  // disk-full mid-recording, or a stray double-stop) must still resolve cleanly
+  // so the UI's stop path always resets — never leave Stop hanging.
+  if (!sessions.has(recordingId)) {
+    return (
+      finalizedSummaries.get(recordingId) ?? {
+        recordingId,
+        dir: join(vault(), recordingId),
+        status: 'ready',
+        segmentCount: 0,
+        durationMs: 0,
+      }
+    );
+  }
   return finalize(recordingId, atMs);
 }
 
@@ -162,12 +189,29 @@ async function finalize(recordingId: string, atMs: number): Promise<RecordingSum
   let durationMs = 0;
   for (const track of session.tracks.values()) {
     if (!track.started) continue;
-    const state = await track.writer.stop(atMs, 'ready');
-    segmentCount += sealedSegments(state).length;
-    durationMs = Math.max(durationMs, totalDurationMs(state));
+    // One track failing to seal must not abort finalizing the others.
+    try {
+      const state = await track.writer.stop(atMs, 'ready');
+      segmentCount += sealedSegments(state).length;
+      durationMs = Math.max(durationMs, totalDurationMs(state));
+    } catch {
+      // writer.stop is already best-effort; ignore and keep the recording usable.
+    }
   }
   sessions.delete(recordingId);
-  return { recordingId, dir: session.dir, status: 'ready', segmentCount, durationMs };
+  const summary: RecordingSummary = {
+    recordingId,
+    dir: session.dir,
+    status: 'ready',
+    segmentCount,
+    durationMs,
+  };
+  finalizedSummaries.set(recordingId, summary);
+  if (finalizedSummaries.size > MAX_REMEMBERED) {
+    const oldest = finalizedSummaries.keys().next().value;
+    if (oldest !== undefined) finalizedSummaries.delete(oldest);
+  }
+  return summary;
 }
 
 /** Group per-track orphans by recording (a recording is orphaned if any track is). */
@@ -219,13 +263,13 @@ async function directorySize(dir: string): Promise<number> {
 }
 
 export async function recordingSize(dir: string): Promise<number> {
-  if (!resolve(dir).startsWith(resolve(vault()))) return 0;
+  if (!isInsideVault(dir)) return 0;
   return directorySize(dir);
 }
 
 /** Delete a recording's raw segments to reclaim space (vault-scoped). */
 export async function deleteRawRecording(dir: string): Promise<number> {
-  if (!resolve(dir).startsWith(resolve(vault()))) {
+  if (!isInsideVault(dir)) {
     throw new Error('Refusing to delete a path outside the recordings vault');
   }
   const freed = await directorySize(dir);
@@ -235,7 +279,7 @@ export async function deleteRawRecording(dir: string): Promise<number> {
 
 export async function recover(dir: string): Promise<RecoveryResult> {
   // Security: only recover inside our own vault.
-  if (!resolve(dir).startsWith(resolve(vault()))) {
+  if (!isInsideVault(dir)) {
     throw new Error('Refusing to recover a path outside the recordings vault');
   }
   let segmentCount = 0;

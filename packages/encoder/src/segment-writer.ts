@@ -91,6 +91,9 @@ export class SegmentWriter {
   }
 
   async writeFragment(bytes: Uint8Array, durationMs: number): Promise<void> {
+    // Only a genuine disk-full is terminal. A transient error (the append layer
+    // already retried past a passing lock) loses at most this one ~1s fragment;
+    // the track stays alive and keeps recording rather than being torn down.
     if (this.failed) throw new DiskFullError();
     try {
       if (!this.open) await this.openSegment();
@@ -102,8 +105,13 @@ export class SegmentWriter {
       this.elapsedMs += durationMs;
       if (segment.durationMs >= this.targetDurationMs) await this.sealOpen();
     } catch (error) {
-      this.failed = true;
-      if (isDiskFull(error)) throw new DiskFullError(error);
+      if (isDiskFull(error)) {
+        this.failed = true;
+        throw new DiskFullError(error);
+      }
+      // Transient/non-fatal: surface it, but don't set `failed` (so the next
+      // fragment retries) and don't disguise it as DiskFullError (which would
+      // finalize every sibling track).
       throw error;
     }
   }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TrackConfig } from '@novarec/shared';
+import { useAppStore } from '../../store.js';
 import { MultiTrackRecorder } from './recorder.js';
 
 export type RecordingState = 'idle' | 'recording' | 'paused';
@@ -32,6 +33,7 @@ export function useRecorder(): RecorderControls {
   const startedAt = useRef(0);
   const pausedAt = useRef(0);
   const pausedAccumMs = useRef(0);
+  const setRecordingActive = useAppStore((s) => s.setRecordingActive);
 
   useEffect(() => {
     if (state !== 'recording') return undefined;
@@ -41,12 +43,35 @@ export function useRecorder(): RecorderControls {
     return () => window.clearInterval(id);
   }, [state]);
 
+  // Publish a global "recording in progress" flag so the shell can lock
+  // navigation — switching tabs mid-recording would unmount this hook and orphan
+  // the take. Balanced: registers while non-idle, deregisters on idle/unmount.
+  useEffect(() => {
+    if (state === 'idle') return undefined;
+    setRecordingActive(true);
+    return () => setRecordingActive(false);
+  }, [state, setRecordingActive]);
+
+  // Safety net: if this view is ever torn down while a recorder is live (window
+  // close, forced unmount), finalize it so segments are sealed rather than left
+  // writing frozen frames to disk with no UI to stop them.
+  useEffect(
+    () => () => {
+      void recorderRef.current?.stop();
+      recorderRef.current = null;
+    },
+    [],
+  );
+
   const start = useCallback(
     async (
       configs: TrackConfig[],
       targetFps: number,
       providedStreams?: Record<string, MediaStream>,
     ) => {
+      // Guard against a double-start (rapid clicks, or start during an in-flight
+      // stop): a second recorder would overwrite the ref and orphan the first.
+      if (recorderRef.current) return;
       setError(null);
       setSegmentCount(0);
       setElapsedMs(0);
@@ -83,10 +108,18 @@ export function useRecorder(): RecorderControls {
   }, []);
 
   const stop = useCallback(async () => {
-    const result = await recorderRef.current?.stop();
+    const recorder = recorderRef.current;
     recorderRef.current = null;
-    setState('idle');
-    if (result) setLastRecordingDir(result.dir);
+    try {
+      const result = await recorder?.stop();
+      if (result) setLastRecordingDir(result.dir);
+    } catch (err) {
+      // Even if finalize reports an error, the UI must return to idle — the
+      // sealed segments are already durable on disk and recoverable.
+      setError(err instanceof Error ? err.message : 'Stop encountered an error');
+    } finally {
+      setState('idle');
+    }
   }, []);
 
   const setMicMuted = useCallback((muted: boolean) => {

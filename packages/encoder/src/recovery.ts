@@ -8,6 +8,7 @@ import {
   sealedSegments,
   serializeEvent,
   totalDurationMs,
+  type ManifestState,
 } from './manifest.js';
 
 const encoder = new TextEncoder();
@@ -56,20 +57,49 @@ export async function scanForOrphans(
  * `track.mp4` (the same byte-concat as recovery, without marking recovered).
  * Used to finalize each track before export. Returns null if nothing sealed.
  */
+/**
+ * Ordered list of on-disk files (init + sealed fragments) that make up a
+ * playable track, in the order they must be concatenated.
+ */
+function trackFiles(dir: string, state: ManifestState): string[] {
+  const files: string[] = [];
+  if (state.initSegment) files.push(join(dir, state.initSegment));
+  for (const seg of sealedSegments(state)) files.push(join(dir, seg.path));
+  return files;
+}
+
+/**
+ * Detect the real container of the captured fragments. MediaRecorder prefers
+ * `video/mp4` but silently falls back to WebM on hosts that can't record MP4;
+ * the bytes are then WebM (EBML) regardless of the `.mp4` segment filenames, so
+ * a recovered file must carry the matching extension or players reject it.
+ */
+async function detectExtension(firstFile: string | undefined, disk: DiskIO): Promise<string> {
+  if (!firstFile) return '.mp4';
+  try {
+    const head = await disk.readFile(firstFile);
+    // EBML magic (Matroska/WebM): 0x1A45DFA3.
+    if (head[0] === 0x1a && head[1] === 0x45 && head[2] === 0xdf && head[3] === 0xa3) {
+      return '.webm';
+    }
+  } catch {
+    // fall through to the default
+  }
+  return '.mp4';
+}
+
 export async function finalizeTrack(
   dir: string,
   disk: DiskIO = nodeDisk,
 ): Promise<{ path: string; durationMs: number } | null> {
   const state = reduceEvents(parseEvents(await disk.readText(join(dir, MANIFEST_FILENAME))));
-  const sealed = sealedSegments(state);
-  if (sealed.length === 0) return null;
+  if (sealedSegments(state).length === 0) return null;
 
-  const parts: Buffer[] = [];
-  if (state.initSegment) parts.push(await disk.readFile(join(dir, state.initSegment)));
-  for (const seg of sealed) parts.push(await disk.readFile(join(dir, seg.path)));
-
-  const path = join(dir, 'track.mp4');
-  await disk.writeAndSync(path, Buffer.concat(parts));
+  // Extension is irrelevant here — the output feeds FFmpeg, which demuxes by
+  // content — but keep it correct so a stray track file is still openable.
+  const files = trackFiles(dir, state);
+  const path = join(dir, `track${await detectExtension(files[0], disk)}`);
+  await disk.concatToFile(path, files);
   return { path, durationMs: totalDurationMs(state) };
 }
 
@@ -81,12 +111,9 @@ export async function recoverRecording(
   const state = reduceEvents(parseEvents(await disk.readText(manifestPath)));
   const sealed = sealedSegments(state);
 
-  const parts: Buffer[] = [];
-  if (state.initSegment) parts.push(await disk.readFile(join(dir, state.initSegment)));
-  for (const seg of sealed) parts.push(await disk.readFile(join(dir, seg.path)));
-
-  const outputPath = join(dir, 'recovered.mp4');
-  await disk.writeAndSync(outputPath, Buffer.concat(parts));
+  const files = trackFiles(dir, state);
+  const outputPath = join(dir, `recovered${await detectExtension(files[0], disk)}`);
+  await disk.concatToFile(outputPath, files);
 
   const durationMs = totalDurationMs(state);
   await disk.appendAndSync(

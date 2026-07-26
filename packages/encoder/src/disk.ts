@@ -1,5 +1,12 @@
 import { mkdir, open, readFile, readdir, stat } from 'node:fs/promises';
 
+// A transient file lock (antivirus scan, Windows Search indexer, OneDrive sync)
+// briefly fails an open/write with EBUSY/EPERM/EACCES on the very machines we
+// target. Retrying with a short backoff rides over it instead of killing the
+// track — but ENOSPC is genuinely fatal and must never be retried.
+const APPEND_RETRIES = 4;
+const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
 /**
  * Durable disk operations behind an interface so tests can inject failures
  * (e.g. ENOSPC for the disk-full path). Writes are always followed by an
@@ -11,6 +18,13 @@ export interface DiskIO {
   writeAndSync(path: string, data: Uint8Array): Promise<void>;
   /** Append to a file and fsync it. */
   appendAndSync(path: string, data: Uint8Array): Promise<void>;
+  /**
+   * Concatenate many input files into one output file, streaming one input at a
+   * time so peak memory stays bounded to a single segment — a multi-hour track is
+   * gigabytes and must never be materialized whole (that OOMs / hits Node's
+   * ~2 GiB Buffer limit). fsync'd once at the end.
+   */
+  concatToFile(outputPath: string, inputPaths: string[]): Promise<void>;
   readFile(path: string): Promise<Buffer>;
   readText(path: string): Promise<string>;
   readdir(dir: string): Promise<string[]>;
@@ -30,13 +44,57 @@ export const nodeDisk: DiskIO = {
       await fh.close();
     }
   },
-  async appendAndSync(path, data) {
-    const fh = await open(path, 'a');
+  async concatToFile(outputPath, inputPaths) {
+    const out = await open(outputPath, 'w');
     try {
-      await fh.write(data);
-      await fh.sync();
+      for (const input of inputPaths) {
+        // Stream each source file through a bounded buffer rather than reading
+        // the whole segment (let alone the whole track) into memory at once.
+        const src = await open(input, 'r');
+        try {
+          const chunk = Buffer.allocUnsafe(1024 * 1024);
+          for (;;) {
+            const { bytesRead } = await src.read(chunk, 0, chunk.length, null);
+            if (bytesRead === 0) break;
+            await out.write(chunk.subarray(0, bytesRead));
+          }
+        } finally {
+          await src.close();
+        }
+      }
+      await out.sync();
     } finally {
-      await fh.close();
+      await out.close();
+    }
+  },
+  async appendAndSync(path, data) {
+    for (let attempt = 1; ; attempt += 1) {
+      let fh;
+      try {
+        fh = await open(path, 'a');
+      } catch (error) {
+        // Nothing was written — safe to retry a transient lock.
+        if (isDiskFull(error) || attempt >= APPEND_RETRIES) throw error;
+        await delay(40 * attempt);
+        continue;
+      }
+      try {
+        // Snapshot the size so a partial append can be rolled back before a
+        // retry — otherwise a second attempt would duplicate bytes and corrupt
+        // the fragment.
+        const { size } = await fh.stat();
+        try {
+          await fh.write(data);
+          await fh.sync();
+          return;
+        } catch (error) {
+          await fh.truncate(size).catch(() => undefined);
+          if (isDiskFull(error) || attempt >= APPEND_RETRIES) throw error;
+          await delay(40 * attempt);
+        }
+      } finally {
+        await fh.close().catch(() => undefined);
+      }
     }
   },
   async readFile(path) {

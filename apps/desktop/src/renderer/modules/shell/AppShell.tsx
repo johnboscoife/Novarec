@@ -27,6 +27,7 @@ const NAV: readonly NavItem[] = [
 export function AppShell(): ReactElement {
   const view = useAppStore((s) => s.view);
   const setView = useAppStore((s) => s.setView);
+  const recordingLocked = useAppStore((s) => s.recordingCount > 0);
   const settings = useAppSettings();
   const saveSettings = useSaveAppSettings();
   const appSettings = settings.data;
@@ -59,7 +60,13 @@ export function AppShell(): ReactElement {
           <LogoWordmark />
         </div>
         {NAV.map((item) => (
-          <NavButton key={item.id} item={item} active={view === item.id} onSelect={setView} />
+          <NavButton
+            key={item.id}
+            item={item}
+            active={view === item.id}
+            locked={recordingLocked && view !== item.id}
+            onSelect={setView}
+          />
         ))}
         <div className="mt-auto space-y-2">
           <ExportIndicator />
@@ -81,6 +88,7 @@ export function AppShell(): ReactElement {
           <NavButton
             item={{ id: 'settings', label: 'Settings', hint: 'Preferences & privacy' }}
             active={view === 'settings'}
+            locked={recordingLocked && view !== 'settings'}
             onSelect={setView}
           />
           <div className="px-2 text-[11px] leading-relaxed text-dim-app">
@@ -160,20 +168,24 @@ function ExportIndicator(): ReactElement | null {
 function NavButton({
   item,
   active,
+  locked = false,
   onSelect,
 }: {
   item: NavItem;
   active: boolean;
+  locked?: boolean;
   onSelect: (id: ViewId) => void;
 }): ReactElement {
   return (
     <button
       type="button"
       aria-current={active ? 'page' : undefined}
-      onClick={() => onSelect(item.id)}
+      disabled={locked}
+      title={locked ? 'Stop the current recording to switch tabs' : undefined}
+      onClick={() => !locked && onSelect(item.id)}
       className={`w-full rounded-lg px-3 py-2 text-left transition ${
         active ? 'bg-surface2 text-app' : 'text-muted-app hover:bg-surface hover:text-app2'
-      }`}
+      } ${locked ? 'cursor-not-allowed opacity-40 hover:bg-transparent' : ''}`}
     >
       <div className="text-sm font-medium">{item.label}</div>
       <div className="text-xs text-muted-app">{item.hint}</div>

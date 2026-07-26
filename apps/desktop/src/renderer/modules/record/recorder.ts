@@ -14,6 +14,15 @@ const VIDEO_MIME = [
   'video/webm;codecs=vp9',
   'video/webm',
 ];
+// A single stream carrying BOTH video and its own audio (e.g. a meeting's
+// composited canvas + mixed mic audio). A video-only mime string silently drops
+// the audio track, so the codec list must name an audio codec too.
+const VIDEO_AUDIO_MIME = [
+  'video/mp4;codecs=avc1.42E01F,mp4a.40.2',
+  'video/mp4',
+  'video/webm;codecs=vp9,opus',
+  'video/webm',
+];
 const AUDIO_MIME = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'];
 const TIMESLICE_MS = 1000;
 // A capture is "stalled" if no chunk arrives for this long (well past the 1s
@@ -22,10 +31,14 @@ const TIMESLICE_MS = 1000;
 const STALL_TIMEOUT_MS = 8000;
 const STOP_TIMEOUT_MS = 3000;
 const QUEUE_FLUSH_TIMEOUT_MS = 6000;
-// Backpressure: warn if unwritten fragments pile up in memory (disk can't keep
-// up). ~40 chunks ≈ 40s of buffered footage, or a hard 512 MB ceiling.
+// Backpressure: if unwritten fragments pile up in memory (the disk can't keep
+// up with capture), we don't just warn — we pause the encoder until the write
+// queue drains, so memory can't grow without bound and crash the recording.
+// ~40 chunks ≈ 40s of buffered footage, or a hard 512 MB ceiling. Resume once
+// the queue drains back below the low-water mark.
 const MAX_PENDING_CHUNKS = 40;
 const MAX_PENDING_BYTES = 512 * 1024 * 1024;
+const RESUME_PENDING_CHUNKS = 20;
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -109,19 +122,25 @@ class TrackRecorder {
   private pendingChunks = 0;
   private pendingBytes = 0;
   private backpressured = false;
+  private throttled = false;
+  private userPaused = false;
 
   constructor(
     private readonly recordingId: string,
     private readonly trackId: string,
     private readonly label: string,
     private readonly stream: MediaStream,
-    private readonly isVideo: boolean,
     private readonly onError: (message: string) => void,
     private readonly onSegment: (count: number) => void,
   ) {}
 
   start(): void {
-    const mime = pickMime(this.isVideo ? VIDEO_MIME : AUDIO_MIME);
+    // Choose the container/codec from what the stream actually carries, so a
+    // combined video+audio stream never gets a video-only mime that drops audio.
+    const hasVideo = this.stream.getVideoTracks().length > 0;
+    const hasAudio = this.stream.getAudioTracks().length > 0;
+    const candidates = hasVideo ? (hasAudio ? VIDEO_AUDIO_MIME : VIDEO_MIME) : AUDIO_MIME;
+    const mime = pickMime(candidates);
     this.recorder = new MediaRecorder(this.stream, mime ? { mimeType: mime } : undefined);
     this.recorder.ondataavailable = (event) => this.enqueue(event.data);
     this.recorder.onerror = () => this.onError(`${this.label} reported an error`);
@@ -150,15 +169,24 @@ class TrackRecorder {
 
     this.pendingChunks += 1;
     this.pendingBytes += blob.size;
-    if (
-      !this.backpressured &&
-      (this.pendingChunks > MAX_PENDING_CHUNKS || this.pendingBytes > MAX_PENDING_BYTES)
-    ) {
-      this.backpressured = true;
-      this.onError(
-        `${this.label}: the disk can't keep up with capture — footage is buffering in memory. ` +
-          'Stop soon (or lower the frame rate / free disk space) to avoid dropped frames.',
-      );
+    if (this.pendingChunks > MAX_PENDING_CHUNKS || this.pendingBytes > MAX_PENDING_BYTES) {
+      if (!this.backpressured) {
+        this.backpressured = true;
+        this.onError(
+          `${this.label}: the disk can't keep up with capture — pausing briefly to catch up. ` +
+            'Lower the frame rate or free disk space to avoid gaps.',
+        );
+      }
+      // Genuine backpressure: stop the encoder so memory can't grow unbounded.
+      // ondataavailable won't fire while paused, so the queue drains.
+      if (!this.throttled && !this.userPaused && this.recorder?.state === 'recording') {
+        this.throttled = true;
+        try {
+          this.recorder.pause();
+        } catch {
+          // ignore — nothing we can do if the recorder refuses to pause
+        }
+      }
     }
 
     this.queue = this.queue.then(async () => {
@@ -176,18 +204,32 @@ class TrackRecorder {
       } finally {
         this.pendingChunks -= 1;
         this.pendingBytes -= blob.size;
-        if (this.backpressured && this.pendingChunks <= MAX_PENDING_CHUNKS / 2) {
+        if (this.pendingChunks <= RESUME_PENDING_CHUNKS) {
           this.backpressured = false; // drained — allow a fresh warning if it recurs
+          if (this.throttled && !this.userPaused && this.recorder?.state === 'paused') {
+            this.throttled = false;
+            // Resume from now so the drain gap isn't counted as recorded time.
+            this.lastChunkAt = performance.now();
+            try {
+              this.recorder.resume();
+            } catch {
+              // ignore
+            }
+          }
         }
       }
     });
   }
 
   pause(): void {
+    this.userPaused = true;
+    this.throttled = false; // a user pause supersedes any backpressure pause
     this.recorder?.pause();
   }
 
   resume(): void {
+    this.userPaused = false;
+    this.throttled = false;
     this.lastChunkAt = performance.now();
     this.recorder?.resume();
   }
@@ -245,34 +287,56 @@ class ResilientAudioStream {
   private readonly dest = this.ctx.createMediaStreamDestination();
   private source: MediaStreamAudioSourceNode | null = null;
   private live: MediaStream | null = null;
+  private attaching: Promise<void> | null = null;
+  private stopped = false;
   readonly stream = this.dest.stream;
 
   constructor(private readonly deviceId: string | null) {}
 
   async start(): Promise<void> {
     if (this.ctx.state === 'suspended') await this.ctx.resume().catch(() => undefined);
-    await this.attach();
+    await this.requestAttach();
     navigator.mediaDevices.addEventListener('devicechange', this.onDeviceChange);
   }
 
+  /**
+   * Single-flight re-acquire. Unplugging a mic fires BOTH `devicechange` and the
+   * track's `ended` almost simultaneously; without de-duping, two overlapping
+   * attaches each connect a new source to the destination — doubling/echoing the
+   * audio and leaking a live stream. Coalesce them into one reconnect.
+   */
+  private requestAttach = (): Promise<void> => {
+    if (!this.attaching) {
+      this.attaching = this.attach().finally(() => {
+        this.attaching = null;
+      });
+    }
+    return this.attaching;
+  };
+
   private attach = async (): Promise<void> => {
     const mic = await acquireDeviceStream('audio', this.deviceId);
+    if (this.stopped) {
+      mic.getTracks().forEach((t) => t.stop()); // stopped mid-acquire — don't leak
+      return;
+    }
     this.source?.disconnect();
     this.live?.getTracks().forEach((t) => t.stop());
     this.live = mic;
     this.source = this.ctx.createMediaStreamSource(mic);
     this.source.connect(this.dest);
     mic.getAudioTracks().forEach((track) => {
-      track.onended = () => void this.attach().catch(() => undefined);
+      track.onended = () => void this.requestAttach().catch(() => undefined);
     });
   };
 
   private onDeviceChange = (): void => {
     const track = this.live?.getAudioTracks()[0];
-    if (!track || track.readyState === 'ended') void this.attach().catch(() => undefined);
+    if (!track || track.readyState === 'ended') void this.requestAttach().catch(() => undefined);
   };
 
   stop(): void {
+    this.stopped = true;
     navigator.mediaDevices.removeEventListener('devicechange', this.onDeviceChange);
     this.source?.disconnect();
     this.live?.getTracks().forEach((t) => t.stop());
@@ -319,13 +383,11 @@ export class MultiTrackRecorder {
             providedStreams?.[config.id] ??
             (await acquireStream(config, targetFps, screenSourceId));
         }
-        const isVideo = config.kind === 'screen' || config.kind === 'camera';
         const recorder = new TrackRecorder(
           recordingId,
           config.id,
           config.label,
           stream,
-          isVideo,
           this.callbacks.onError,
           (count) => {
             this.perTrack.set(config.id, count);
