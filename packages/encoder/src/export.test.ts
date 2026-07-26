@@ -144,7 +144,7 @@ describe('buildFfmpegArgs', () => {
       'o.mp4',
     );
     const graph = flagValue(args, '-filter_complex');
-    expect(graph).toContain('[1:a][2:a]amix=inputs=2:normalize=0[aout]');
+    expect(graph).toContain('[1:a][2:a]amix=inputs=2:normalize=0,alimiter=limit=0.95[aout]');
     expect(args).toContain('[aout]');
   });
 });

@@ -195,7 +195,9 @@ function buildCompositeArgs(
       audioMap = `${audioIdxs[0]}:a`;
     } else {
       const labels = audioIdxs.map((idx) => `[${idx}:a]`).join('');
-      chains.push(`${labels}amix=inputs=${audioIdxs.length}:normalize=0[aout]`);
+      // Sum at full scale (normalize=0 keeps each source at its recorded level),
+      // then a limiter tames the peaks so mic + system audio together can't clip.
+      chains.push(`${labels}amix=inputs=${audioIdxs.length}:normalize=0,alimiter=limit=0.95[aout]`);
       audioMap = '[aout]';
     }
   }

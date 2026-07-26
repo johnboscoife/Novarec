@@ -1,12 +1,13 @@
-import { mkdir, readdir, stat } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { mkdir, readdir, rename, rm, stat } from 'node:fs/promises';
+import { join } from 'node:path';
 import { app } from 'electron';
 import { exportRecording, finalizeTrack } from '@novarec/encoder';
 import type { ExportSettings } from '@novarec/shared';
 import { ffmpegBinaryPath } from '../ffmpeg-path.js';
 import { loadAppSettings } from '../app-settings-store.js';
 import { addHistoryEntry } from '../export-history-store.js';
-import { deleteRawRecording, recordingsVault } from './session.js';
+import { deleteRawRecording, isInsideVault } from './session.js';
 
 /**
  * Export a finished recording: finalize each track (concat its sealed fMP4
@@ -69,7 +70,7 @@ export async function runExport(
   onProgress?: (elapsedMs: number, totalMs: number) => void,
 ): Promise<{ outputPath: string; durationMs: number }> {
   // Security: only export recordings inside our own vault.
-  if (!resolve(recordingDir).startsWith(resolve(recordingsVault()))) {
+  if (!isInsideVault(recordingDir)) {
     throw new Error('Refusing to export a path outside the recordings vault');
   }
 
@@ -87,13 +88,23 @@ export async function runExport(
 
   const folder = await destinationFolder();
   const outputPath = await uniqueOutputPath(folder, settings.container);
-  await exportRecording({
-    ffmpegPath: ffmpegBinaryPath(),
-    inputs,
-    settings,
-    outputPath,
-    ...(onProgress ? { onProgress: (elapsedMs) => onProgress(elapsedMs, durationMs) } : {}),
-  });
+  // Encode to a temp sibling (same extension so FFmpeg picks the right muxer),
+  // then atomically rename into place only on success. A failed/disk-full/killed
+  // encode therefore never leaves a corrupt half-file at the deliverable path.
+  const tempPath = join(folder, `.novarec-export-${randomUUID()}.${settings.container}`);
+  try {
+    await exportRecording({
+      ffmpegPath: ffmpegBinaryPath(),
+      inputs,
+      settings,
+      outputPath: tempPath,
+      ...(onProgress ? { onProgress: (elapsedMs) => onProgress(elapsedMs, durationMs) } : {}),
+    });
+    await rename(tempPath, outputPath);
+  } catch (error) {
+    await rm(tempPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
 
   const sizeBytes = (await stat(outputPath).catch(() => ({ size: 0 }))).size;
   await addHistoryEntry({

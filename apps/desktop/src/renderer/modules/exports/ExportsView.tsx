@@ -37,7 +37,9 @@ export function ExportsView(): ReactElement {
   });
 
   async function changeFolder(): Promise<void> {
-    const { path } = await window.novarec.chooseExportFolder();
+    const { path } = await window.novarec.chooseExportFolder({
+      defaultPath: settings.data?.exportFolder ?? null,
+    });
     if (path && settings.data) saveSettings.mutate({ ...settings.data, exportFolder: path });
   }
 

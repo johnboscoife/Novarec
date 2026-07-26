@@ -17,12 +17,20 @@ export interface ExportRecordingOptions {
   signal?: AbortSignal;
 }
 
+/**
+ * Signatures FFmpeg emits when a *hardware encoder is unavailable* (no capable
+ * GPU, driver/session limits, or an FFmpeg build without it) — as opposed to a
+ * runtime failure (disk full, bad input) that every encoder will hit alike.
+ */
+function isEncoderInitError(error: unknown): boolean {
+  const msg = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  return /unknown encoder|cannot load|not supported|no nvenc|no capable|nvenc|not available|cannot init|error initializing|failed to open encoder|openencode|no such device|device .* (not|unavailable)|impossible to open/.test(
+    msg,
+  );
+}
+
 export async function exportRecording(options: ExportRecordingOptions): Promise<string> {
   const inputs = options.inputs;
-  const runOpts = {
-    ...(options.onProgress ? { onProgress: options.onProgress } : {}),
-    ...(options.signal ? { signal: options.signal } : {}),
-  };
 
   // Walk the encoder candidates best-first (hardware → software). A machine
   // without a given hardware encoder (or an FFmpeg build lacking it) fails fast
@@ -32,6 +40,21 @@ export async function exportRecording(options: ExportRecordingOptions): Promise<
   const attempts: (string | undefined)[] = candidates.length > 0 ? candidates : [undefined];
 
   for (let i = 0; i < attempts.length; i += 1) {
+    // Track whether this attempt made real progress: a failure *after* progress
+    // is a runtime error (disk full, corrupt input) that the next, slower encoder
+    // would hit identically — re-encoding from scratch just wastes minutes/hours.
+    let progressed = false;
+    const runOpts = {
+      ...(options.onProgress
+        ? {
+            onProgress: (ms: number) => {
+              if (ms > 0) progressed = true;
+              options.onProgress?.(ms);
+            },
+          }
+        : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
+    };
     try {
       await runFfmpeg(
         options.ffmpegPath,
@@ -40,7 +63,11 @@ export async function exportRecording(options: ExportRecordingOptions): Promise<
       );
       return options.outputPath;
     } catch (error) {
-      if (options.signal?.aborted || i === attempts.length - 1) throw error;
+      const isLast = i === attempts.length - 1;
+      // Only fall through for an encoder-availability failure at init; a mid-
+      // stream failure aborts immediately.
+      const shouldFallback = options.onProgress ? !progressed : isEncoderInitError(error);
+      if (options.signal?.aborted || isLast || !shouldFallback) throw error;
       // else: try the next (slower but more compatible) encoder.
     }
   }

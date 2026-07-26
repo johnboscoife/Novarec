@@ -1,5 +1,7 @@
 import type { ReactElement } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { EXPORT_PRESETS } from '@novarec/shared';
+import { useExportStore } from '../../exportStore.js';
 
 /**
  * On launch, surfaces any recording that never finished (crash/kill) and offers
@@ -7,13 +9,20 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
  */
 export function RecoveryBanner(): ReactElement | null {
   const client = useQueryClient();
+  const startExport = useExportStore((s) => s.start);
   const orphans = useQuery({
     queryKey: ['recording:orphans'],
     queryFn: () => window.novarec.listOrphans(),
   });
   const recover = useMutation({
     mutationFn: (dir: string) => window.novarec.recoverRecording({ dir }),
-    onSuccess: () => client.invalidateQueries({ queryKey: ['recording:orphans'] }),
+    onSuccess: (_result, dir) => {
+      void client.invalidateQueries({ queryKey: ['recording:orphans'] });
+      // Recovery seals the tracks; route the recording through the real export
+      // pipeline so multi-track (screen + mic) recoveries are muxed into one
+      // playable file and revealed — not left as separate raw track files.
+      startExport(dir, EXPORT_PRESETS[0]!.settings);
+    },
   });
 
   const list = orphans.data ?? [];
