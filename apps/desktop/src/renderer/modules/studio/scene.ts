@@ -71,10 +71,22 @@ export function clampSource(s: SceneSource): SceneSource {
  * camera/screen/image is acquired once and shared across the preview and program
  * canvases (a camera can't be opened twice reliably).
  */
+/** Fast, stable non-crypto hash (djb2) — enough to identify image content. */
+function hashString(str: string): string {
+  let h = 5381;
+  for (let i = 0; i < str.length; i += 1) h = (((h << 5) + h) ^ str.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
 export function mediaSignature(s: SceneSource): string {
   if (s.kind === 'camera') return `camera:${s.deviceId ?? 'default'}`;
   if (s.kind === 'screen') return `screen:${s.screenSourceId ?? 'default'}`;
-  if (s.kind === 'image') return `image:${s.dataUrl?.slice(0, 96) ?? ''}`;
+  // Key on the FULL image content (length + hash), not a 96-char prefix — two
+  // different images sharing a MIME/base64 header prefix would otherwise collide
+  // and render the wrong picture.
+  if (s.kind === 'image') {
+    return s.dataUrl ? `image:${s.dataUrl.length}:${hashString(s.dataUrl)}` : 'image:';
+  }
   return `text:${s.id}`;
 }
 

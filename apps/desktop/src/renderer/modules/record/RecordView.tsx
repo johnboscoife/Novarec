@@ -28,6 +28,7 @@ import { RecordingControls } from './RecordingControls.js';
 import { RecoveryBanner } from './RecoveryBanner.js';
 import { useAppSettings, useSaveAppSettings } from '../settings/useAppSettings.js';
 import { useExportStore } from '../../exportStore.js';
+import { REGION_CAPTURE_ENABLED } from '../../featureFlags.js';
 
 const VERDICT_STYLE: Record<SustainVerdict, { label: string; className: string }> = {
   sustained: { label: 'Sustained', className: 'text-emerald-400' },
@@ -107,6 +108,10 @@ export function RecordView(): ReactElement {
 
   const recorder = useRecorder();
   const info = useAppInfo();
+  // System-audio loopback is a Windows-only capability; offering it elsewhere
+  // silently records nothing. Default to Windows (the primary target) until
+  // app info resolves so the control doesn't flicker.
+  const isWindows = (info.data?.platform ?? 'win32') === 'win32';
   const appSettings = useAppSettings();
   const saveAppSettings = useSaveAppSettings();
   const autoExportedDir = useRef<string | null>(null);
@@ -202,7 +207,7 @@ export function RecordView(): ReactElement {
         ...(micDeviceId ? { deviceId: micDeviceId } : {}),
       });
     }
-    if (systemAudioOn) {
+    if (systemAudioOn && isWindows) {
       configs.push({
         id: 'systemAudio',
         kind: 'systemAudio',
@@ -217,7 +222,7 @@ export function RecordView(): ReactElement {
 
   // The floating camera is baked into the screen recording, so it isn't a
   // standalone track — recording needs a screen/window or an audio source.
-  const canRecord = selectedSourceId !== null || micOn || systemAudioOn;
+  const canRecord = selectedSourceId !== null || micOn || (systemAudioOn && isWindows);
 
   function beginRecording(): void {
     if (!canRecord || recorder.state !== 'idle' || countdown !== null) return;
@@ -259,11 +264,9 @@ export function RecordView(): ReactElement {
   // `autoExportedDir` guards against exporting the same recording twice.
   const maybeAutoExport = useRef<(dir: string) => void>(() => undefined);
   maybeAutoExport.current = (dir) => {
-    if (
-      appSettings.data?.autoExportOnStop &&
-      autoExportedDir.current !== dir &&
-      exportJob.status !== 'running'
-    ) {
+    // The export store queues jobs, so a still-running export no longer means we
+    // drop this one — just enqueue it (guarded so each dir is queued only once).
+    if (appSettings.data?.autoExportOnStop && autoExportedDir.current !== dir) {
       autoExportedDir.current = dir;
       exportJob.start(dir, presetSettings(exportPresetId));
     }
@@ -298,17 +301,32 @@ export function RecordView(): ReactElement {
 
   // The floating webcam is a separate always-on-top window captured into the
   // recording — so it appears in the export exactly where/size/shape it sits.
+  // Place it on the display being captured; a webcam on another monitor wouldn't
+  // be in the recording at all.
   useEffect(() => {
     if (cameraOn) {
+      const screenSource = sources.data?.screens?.find((s) => s.id === selectedSourceId);
+      const display = screenSource
+        ? displays.data?.find((d) => d.id === screenSource.displayId)
+        : undefined;
       void window.novarec.showWebcam({
         deviceId: cameraDeviceId,
         shape: webcamShape,
         sizePx: webcamSize,
+        displayBounds: display ? display.bounds : null,
       });
     } else {
       void window.novarec.hideWebcam();
     }
-  }, [cameraOn, cameraDeviceId, webcamShape, webcamSize]);
+  }, [
+    cameraOn,
+    cameraDeviceId,
+    webcamShape,
+    webcamSize,
+    selectedSourceId,
+    displays.data,
+    sources.data,
+  ]);
 
   // Always tear the overlay down when leaving Record.
   useEffect(() => () => void window.novarec.hideWebcam(), []);
@@ -487,19 +505,21 @@ export function RecordView(): ReactElement {
                 </optgroup>
               )}
             </select>
-            <button
-              type="button"
-              onClick={region ? clearRegion : selectRegion}
-              className={`shrink-0 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
-                region
-                  ? 'bg-blue-600/20 text-blue-300 ring-1 ring-inset ring-blue-500/40'
-                  : 'bg-surface2 text-app2 hover:bg-surface2'
-              }`}
-            >
-              {region ? 'Region ✓' : 'Region…'}
-            </button>
+            {REGION_CAPTURE_ENABLED && (
+              <button
+                type="button"
+                onClick={region ? clearRegion : selectRegion}
+                className={`shrink-0 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
+                  region
+                    ? 'bg-blue-600/20 text-blue-300 ring-1 ring-inset ring-blue-500/40'
+                    : 'bg-surface2 text-app2 hover:bg-surface2'
+                }`}
+              >
+                {region ? 'Region ✓' : 'Region…'}
+              </button>
+            )}
           </div>
-          {region && (
+          {REGION_CAPTURE_ENABLED && region && (
             <p className="mt-2 text-xs text-muted-app">
               {Math.round(region.rect.width)}×{Math.round(region.rect.height)} at (
               {Math.round(region.rect.x)}, {Math.round(region.rect.y)})
@@ -520,12 +540,14 @@ export function RecordView(): ReactElement {
           <div className="flex flex-wrap gap-2">
             <TrackChip label="Camera" active={cameraOn} onClick={() => toggleCamera(!cameraOn)} />
             <TrackChip label="Microphone" active={micOn} onClick={() => toggleMic(!micOn)} />
-            <TrackChip
-              label="System audio"
-              hint="Windows"
-              active={systemAudioOn}
-              onClick={() => setSystemAudioOn(!systemAudioOn)}
-            />
+            {isWindows && (
+              <TrackChip
+                label="System audio"
+                hint="Windows"
+                active={systemAudioOn}
+                onClick={() => setSystemAudioOn(!systemAudioOn)}
+              />
+            )}
           </div>
           {(cameraOn || micOn) && (
             <div className="mt-3 space-y-2">
