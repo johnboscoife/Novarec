@@ -34,6 +34,16 @@ function sendMsg(room: Room, msg: MeetMsg): void {
     .catch(() => undefined);
 }
 
+/** Send a message to specific participants only (e.g. a late-joiner consent ask). */
+function sendMsgTo(room: Room, msg: MeetMsg, identities: string[]): void {
+  void room.localParticipant
+    .publishData(new TextEncoder().encode(JSON.stringify(msg)), {
+      reliable: true,
+      destinationIdentities: identities,
+    })
+    .catch(() => undefined);
+}
+
 const MEETING_TRACK: TrackConfig = {
   id: 'screen',
   kind: 'screen',
@@ -75,6 +85,12 @@ export function NovaMeet(): ReactElement {
   const consentTimer = useRef<number | null>(null);
   const recordingRef = useRef(false);
   recordingRef.current = recording;
+  // Identity of the participant we believe is recording, so a `rec:false` from
+  // anyone else can't suppress the indicator (transparency is non-negotiable).
+  const recorderIdentityRef = useRef<string | null>(null);
+  // True only on the client that initiated a consent round — so only the host
+  // tallies responses (other clients must not react to responses meant for it).
+  const isRequestingRef = useRef(false);
   const bump = useCallback(() => forceRender((n) => n + 1), []);
 
   useEffect(
@@ -109,15 +125,28 @@ export function NovaMeet(): ReactElement {
       const rtc = new Room({ adaptiveStream: true, dynacast: true });
       roomRef.current = rtc;
       rtc
-        .on(RoomEvent.ParticipantConnected, () => {
-          // Someone joined mid-recording: tell them so the "Recording" indicator
-          // shows for them too (transparency is non-negotiable).
+        .on(RoomEvent.ParticipantConnected, (p) => {
+          // Someone joined mid-recording: keep them OUT of the recording until
+          // they consent, show them the "Recording" indicator, and ask them
+          // directly (a targeted consent request, not a room-wide re-prompt).
           if (recordingRef.current && roomRef.current) {
+            meetingRecRef.current?.exclude(p.identity);
             sendMsg(roomRef.current, { t: 'rec', on: true });
+            sendMsgTo(roomRef.current, { t: 'consent-request', name: name || 'The host' }, [
+              p.identity,
+            ]);
           }
           bump();
         })
-        .on(RoomEvent.ParticipantDisconnected, bump)
+        .on(RoomEvent.ParticipantDisconnected, (p) => {
+          // If the recorder dropped without a clean rec:false, clear the sticky
+          // indicator instead of showing "Recording" forever.
+          if (p.identity === recorderIdentityRef.current) {
+            recorderIdentityRef.current = null;
+            setRemoteRecording(false);
+          }
+          bump();
+        })
         .on(RoomEvent.TrackSubscribed, bump)
         .on(RoomEvent.TrackUnsubscribed, bump)
         .on(RoomEvent.TrackMuted, bump)
@@ -148,9 +177,16 @@ export function NovaMeet(): ReactElement {
     }
   }
 
-  function leave(): void {
-    if (recording) stopRecording();
+  async function leave(): Promise<void> {
+    if (recording) await stopRecording();
     else meetingRecRef.current?.stop();
+    meetingRecRef.current = null;
+    if (consentTimer.current) window.clearTimeout(consentTimer.current);
+    isRequestingRef.current = false;
+    setAwaitingConsent(null);
+    setConsentBanner(null);
+    setRemoteRecording(false);
+    recorderIdentityRef.current = null;
     void roomRef.current?.disconnect();
     roomRef.current = null;
     setJoined(false);
@@ -184,6 +220,8 @@ export function NovaMeet(): ReactElement {
       mr.start();
       meetingRecRef.current = mr;
       await recorder.start([MEETING_TRACK], 30, { screen: mr.stream(30) });
+      isRequestingRef.current = false;
+      recorderIdentityRef.current = rtc.localParticipant.identity; // we are the recorder
       setRecording(true);
       sendMsg(rtc, { t: 'rec', on: true });
     } catch (e) {
@@ -193,10 +231,13 @@ export function NovaMeet(): ReactElement {
     }
   };
 
-  function stopRecording(): void {
+  async function stopRecording(): Promise<void> {
     const rtc = roomRef.current;
     if (rtc) sendMsg(rtc, { t: 'rec', on: false });
-    void recorder.stop();
+    // Finalize the recorder (seal segments) while the composited A/V source is
+    // still live — only then tear down the canvas/AudioContext, so the tail of
+    // the recording isn't truncated.
+    await recorder.stop();
     meetingRecRef.current?.stop();
     meetingRecRef.current = null;
     setRecording(false);
@@ -211,11 +252,13 @@ export function NovaMeet(): ReactElement {
       return;
     }
     ledgerRef.current = {};
+    isRequestingRef.current = true;
     setError(null);
     setAwaitingConsent(remotes.map((p) => p.identity));
     sendMsg(rtc, { t: 'consent-request', name: name || 'The host' });
     if (consentTimer.current) window.clearTimeout(consentTimer.current);
     consentTimer.current = window.setTimeout(() => {
+      isRequestingRef.current = false;
       setAwaitingConsent((cur) => {
         if (cur) setError('Not everyone agreed in time — recording cancelled.');
         return null;
@@ -242,8 +285,20 @@ export function NovaMeet(): ReactElement {
     if (msg.t === 'consent-request') {
       setConsentBanner({ name: msg.name });
     } else if (msg.t === 'consent-response' && participant) {
+      // A participant who joined mid-recording is responding to their targeted
+      // consent ask — admit them into the recording on yes, keep them out on no.
+      // Only the recorder (which owns meetingRecRef) acts on this.
+      const rec = meetingRecRef.current;
+      if (recordingRef.current && rec?.isExcluded(participant.identity)) {
+        if (msg.consented) rec.include(participant.identity);
+        return;
+      }
+      // Only the client that initiated this round tallies responses — otherwise
+      // every participant reacts to responses meant for the host.
+      if (!isRequestingRef.current) return;
       if (!msg.consented) {
         if (consentTimer.current) window.clearTimeout(consentTimer.current);
+        isRequestingRef.current = false;
         setAwaitingConsent(null);
         setError(`${participant.name || participant.identity} declined recording.`);
         return;
@@ -257,8 +312,16 @@ export function NovaMeet(): ReactElement {
       } else {
         setAwaitingConsent(pendingConsent(ledgerRef.current, remoteIds));
       }
-    } else if (msg.t === 'rec') {
-      setRemoteRecording(msg.on);
+    } else if (msg.t === 'rec' && participant) {
+      // Trust the indicator only from the participant who is actually recording:
+      // a `rec:false` from anyone else must not hide it.
+      if (msg.on) {
+        recorderIdentityRef.current = participant.identity;
+        setRemoteRecording(true);
+      } else if (participant.identity === recorderIdentityRef.current) {
+        recorderIdentityRef.current = null;
+        setRemoteRecording(false);
+      }
     }
   };
 
@@ -382,6 +445,7 @@ export function NovaMeet(): ReactElement {
             type="button"
             onClick={() => {
               if (consentTimer.current) window.clearTimeout(consentTimer.current);
+              isRequestingRef.current = false;
               setAwaitingConsent(null);
             }}
             className="rounded-lg bg-surface2 px-3 py-1.5 text-xs text-app2 transition hover:text-app"
@@ -409,7 +473,7 @@ export function NovaMeet(): ReactElement {
         {recording ? (
           <button
             type="button"
-            onClick={stopRecording}
+            onClick={() => void stopRecording()}
             className="rounded-lg bg-neutral-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-neutral-600"
           >
             ⏹ Stop recording
@@ -438,7 +502,7 @@ export function NovaMeet(): ReactElement {
         )}
         <button
           type="button"
-          onClick={leave}
+          onClick={() => void leave()}
           className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-500"
         >
           Leave

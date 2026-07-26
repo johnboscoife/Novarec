@@ -25,6 +25,9 @@ export class MeetingRecorder {
   private readonly audioDest = this.audioCtx.createMediaStreamDestination();
   private readonly videos = new Map<string, HTMLVideoElement>();
   private readonly audioSources = new Map<string, MediaStreamAudioSourceNode>();
+  // Identities kept OUT of the recording (composite + audio mix) — e.g. a
+  // participant who joined mid-recording and hasn't consented yet.
+  private readonly excluded = new Set<string>();
   private raf = 0;
 
   constructor(private readonly room: Room) {
@@ -33,6 +36,20 @@ export class MeetingRecorder {
     const ctx = this.canvas.getContext('2d');
     if (!ctx) throw new Error('Canvas 2D unavailable');
     this.ctx = ctx;
+  }
+
+  /** Keep a participant out of the recording until they consent. */
+  exclude(identity: string): void {
+    this.excluded.add(identity);
+  }
+
+  /** Admit a previously-excluded participant into the recording (they consented). */
+  include(identity: string): void {
+    this.excluded.delete(identity);
+  }
+
+  isExcluded(identity: string): boolean {
+    return this.excluded.has(identity);
   }
 
   /** One A/V stream (composited video + mixed audio) for the recorder. */
@@ -60,7 +77,8 @@ export class MeetingRecorder {
   }
 
   private draw(): void {
-    const participants = [this.room.localParticipant, ...this.room.remoteParticipants.values()];
+    // Excluded (non-consented) participants are neither composited nor mixed.
+    const participants = this.participantList().filter((p) => !this.excluded.has(p.identity));
     this.sync(participants);
 
     this.ctx.fillStyle = '#0b0b0f';
