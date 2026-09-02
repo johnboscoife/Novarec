@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master, main]
   pull_request:
 
 permissions:
@@ -49,3 +49,13 @@ jobs:
       # code-signing/notarization (those need secrets — wired up in Phase 10).
       - name: Build desktop (unpacked)
         run: pnpm --filter @novarec/desktop build:dir
+
+      # Actually LAUNCH what was just built. `build:dir` succeeds happily when a
+      # workspace package is wrongly externalized — the app then dies on startup
+      # trying to require() a .ts file out of app.asar, which is how a
+      # launch-blocking crash once shipped. Building is not evidence it runs.
+      # Skipped on Linux, which needs a virtual display; the failure mode this
+      # guards against is platform-independent.
+      - name: Smoke test (launch the built app)
+        if: runner.os != 'Linux'
+        run: pnpm test:e2e

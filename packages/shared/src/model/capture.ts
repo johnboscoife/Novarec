@@ -52,6 +52,21 @@ export const RecordControlStateSchema = z.object({
 });
 export type RecordControlState = z.infer<typeof RecordControlStateSchema>;
 
+/**
+ * How a take is written.
+ *
+ * `single` records ONE muxed file — video and mixed audio together — so the
+ * recording is finished and playable the moment it stops. `tracks` keeps every
+ * source in its own file, which allows re-balancing audio or re-framing later
+ * but requires a muxing pass to produce something watchable.
+ */
+export const RecordingModeSchema = z.enum(['single', 'tracks']);
+export type RecordingMode = z.infer<typeof RecordingModeSchema>;
+
+/** Container for a finished single-file recording. */
+export const RecordingContainerSchema = z.enum(['mp4', 'mkv']);
+export type RecordingContainer = z.infer<typeof RecordingContainerSchema>;
+
 export const ResolutionSchema = z.object({
   width: z.number().positive(),
   height: z.number().positive(),
@@ -81,6 +96,18 @@ export const CaptureSettingsSchema = z.object({
   micDeviceId: z.string().nullable().default(null),
   webcamShape: WebcamShapeSchema.default('circle'),
   webcamSize: z.number().int().positive().default(240),
+  /**
+   * Scale applied to the camera image inside its frame. Needed because some
+   * cameras — Windows' phone "connected camera" especially — deliver a
+   * landscape frame with the portrait phone image PILLARBOXED inside it. Those
+   * black bars are part of the picture, so no amount of CSS fitting removes
+   * them; only zooming past them does.
+   */
+  recordingMode: RecordingModeSchema.default('single'),
+  recordingContainer: RecordingContainerSchema.default('mp4'),
+  webcamZoom: z.number().min(1).max(4).default(1),
+  /** Mirror the image. Right for a selfie view, wrong for a rear camera. */
+  webcamMirror: z.boolean().default(true),
 });
 export type CaptureSettings = z.infer<typeof CaptureSettingsSchema>;
 
@@ -96,6 +123,10 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   micDeviceId: null,
   webcamShape: 'circle',
   webcamSize: 240,
+  recordingMode: 'single',
+  recordingContainer: 'mp4',
+  webcamZoom: 1,
+  webcamMirror: true,
 };
 
 /** Raw `desktopCapturer` enumeration results (normalized by @novarec/capture). */

@@ -7,9 +7,8 @@
 export const GOOGLE_MEET_ENABLED: boolean = false;
 
 /**
- * Region capture (crop the recording to a picked rectangle). The picker and its
- * geometry engine exist, but the crop is not yet applied to the recorded/exported
- * video — shipping the control would silently record the full screen instead of
- * the region. Hidden until the crop is wired end-to-end so it never lies.
+ * Region capture (crop the recording to a picked rectangle). The crop is applied
+ * to the captured frames before they reach the encoder (`cropStream.ts`), so the
+ * recording — and therefore the export — really is just the picked area. Enabled.
  */
-export const REGION_CAPTURE_ENABLED: boolean = false;
+export const REGION_CAPTURE_ENABLED: boolean = true;

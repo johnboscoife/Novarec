@@ -17,6 +17,107 @@ function flagValue(args: string[], flag: string): string | undefined {
 describe('buildFfmpegArgs', () => {
   const inputs = [{ path: 'in.mp4' }];
 
+  describe('stream copy (record straight to a finished file)', () => {
+    it('never re-encodes the video — that is the expensive part', () => {
+      expect(flagValue(buildFfmpegArgs(preset('mp4-original'), inputs, 'out.mp4'), '-c:v')).toBe(
+        'copy',
+      );
+      expect(flagValue(buildFfmpegArgs(preset('mkv-original'), inputs, 'out.mkv'), '-c:v')).toBe(
+        'copy',
+      );
+    });
+
+    it('copies audio into MKV but normalises it to AAC for MP4', () => {
+      // Chromium can record Opus, which is legal inside MP4 but rejected by
+      // QuickTime, most editors and some browsers. MKV carries it happily.
+      expect(flagValue(buildFfmpegArgs(preset('mkv-original'), inputs, 'out.mkv'), '-c:a')).toBe(
+        'copy',
+      );
+      expect(flagValue(buildFfmpegArgs(preset('mp4-original'), inputs, 'out.mp4'), '-c:a')).toBe(
+        'aac',
+      );
+    });
+
+    it('puts the MP4 index at the front so the file uploads and seeks', () => {
+      const args = buildFfmpegArgs(preset('mp4-original'), inputs, 'out.mp4');
+      expect(flagValue(args, '-movflags')).toBe('+faststart');
+      // Matroska has no such problem and takes no such flag.
+      expect(buildFfmpegArgs(preset('mkv-original'), inputs, 'out.mkv')).not.toContain('-movflags');
+    });
+
+    it('emits nothing that would force an encode', () => {
+      // Any of these alongside `copy` makes FFmpeg refuse the command.
+      const args = buildFfmpegArgs(preset('mp4-original'), inputs, 'out.mp4');
+      for (const flag of ['-crf', '-preset', '-b:v', '-r', '-vf', '-filter_complex']) {
+        expect(args).not.toContain(flag);
+      }
+      expect(args.join(' ')).not.toContain('libx264');
+    });
+
+    it('has no encoder candidates, so there is nothing to fall back to', () => {
+      expect(videoEncoderCandidates(preset('mp4-original'))).toEqual([]);
+    });
+
+    it('writes MKV when that container is chosen', () => {
+      const args = buildFfmpegArgs(preset('mkv-original'), inputs, 'out.mkv');
+      expect(args[args.length - 1]).toBe('out.mkv');
+      expect(flagValue(args, '-c:v')).toBe('copy');
+      expect(flagValue(args, '-c:a')).toBe('copy');
+    });
+
+    it('never composites — a filter graph would re-encode by definition', () => {
+      const multi = [
+        { path: 'screen.mp4', role: 'screen' as const },
+        { path: 'mic.mp4', role: 'audio' as const },
+        { path: 'sys.mp4', role: 'audio' as const },
+      ];
+      const args = buildFfmpegArgs(preset('mp4-original'), multi, 'out.mp4');
+      expect(args).not.toContain('-filter_complex');
+      expect(flagValue(args, '-c:v')).toBe('copy');
+    });
+  });
+
+  describe('chapter metadata', () => {
+    it('adds the metadata file as the LAST input and maps it', () => {
+      const args = buildFfmpegArgs(preset('youtube'), inputs, 'out.mp4', undefined, 'chap.txt');
+      expect(args.indexOf('-i', args.indexOf('in.mp4'))).toBeGreaterThan(0);
+      expect(args).toContain('chap.txt');
+      // Index 1 = the input after the single media input.
+      expect(flagValue(args, '-map_metadata')).toBe('1');
+      // ...and it must come after the media input, never before.
+      expect(args.indexOf('chap.txt')).toBeGreaterThan(args.indexOf('in.mp4'));
+    });
+
+    it('maps metadata past every media input when compositing', () => {
+      // Filter labels address inputs by index, so the metadata input has to sit
+      // after all of them or the graph silently re-points to the wrong stream.
+      const multi = [
+        { path: 'screen.mp4', role: 'screen' as const },
+        { path: 'mic.mp4', role: 'audio' as const },
+        { path: 'sys.mp4', role: 'audio' as const },
+      ];
+      const args = buildFfmpegArgs(preset('youtube'), multi, 'out.mp4', undefined, 'chap.txt');
+      expect(flagValue(args, '-map_metadata')).toBe('3');
+      expect(args.indexOf('chap.txt')).toBeGreaterThan(args.indexOf('sys.mp4'));
+      // The graph still refers to the media inputs by their original indices.
+      const graph = flagValue(args, '-filter_complex') ?? '';
+      expect(graph).toContain('[0:v]');
+      expect(graph).toContain('[1:a]');
+      expect(graph).toContain('[2:a]');
+    });
+
+    it('omits chapters entirely when none are supplied', () => {
+      const args = buildFfmpegArgs(preset('youtube'), inputs, 'out.mp4');
+      expect(args).not.toContain('-map_metadata');
+    });
+
+    it('skips chapters for GIF, which cannot carry them', () => {
+      const args = buildFfmpegArgs(preset('gif'), inputs, 'out.gif', undefined, 'chap.txt');
+      expect(args).not.toContain('chap.txt');
+      expect(args).not.toContain('-map_metadata');
+    });
+  });
+
   it('builds a software H.264 CRF command with scale and fps', () => {
     const settings: ExportSettings = {
       container: 'mp4',

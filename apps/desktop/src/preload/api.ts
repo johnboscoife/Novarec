@@ -37,7 +37,13 @@ export interface NovaRecApi {
   showWebcam(payload: IpcRequest<'webcam:show'>): Promise<IpcResponse<'webcam:show'>>;
   hideWebcam(): Promise<IpcResponse<'webcam:hide'>>;
   onWebcamConfig(
-    callback: (config: { deviceId: string | null; shape: WebcamShape; sizePx: number }) => void,
+    callback: (config: {
+      deviceId: string | null;
+      shape: WebcamShape;
+      sizePx: number;
+      zoom: number;
+      mirror: boolean;
+    }) => void,
   ): () => void;
 
   // --- Recording (Phase 2) ---
@@ -104,4 +110,21 @@ export interface NovaRecApi {
   publishRecordState(payload: IpcRequest<'controls:state'>): Promise<IpcResponse<'controls:state'>>;
   onControlsAction(callback: (action: ControlAction) => void): () => void;
   onControlsState(callback: (state: RecordControlState) => void): () => void;
+
+  addMarker(payload: IpcRequest<'recording:marker'>): Promise<IpcResponse<'recording:marker'>>;
+  freeSpace(): Promise<IpcResponse<'recording:freeSpace'>>;
+
+  // --- Phone camera over Wi-Fi ---
+  startPhoneSession(payload?: IpcRequest<'phone:start'>): Promise<IpcResponse<'phone:start'>>;
+  stopPhoneSession(): Promise<IpcResponse<'phone:stop'>>;
+  sendPhoneAnswer(payload: IpcRequest<'phone:answer'>): Promise<IpcResponse<'phone:answer'>>;
+  sendPhoneIce(payload: IpcRequest<'phone:ice'>): Promise<IpcResponse<'phone:ice'>>;
+  onPhoneEvent(callback: (event: PhoneEvent) => void): () => void;
 }
+
+/** Signalling and lifecycle messages main forwards from the phone. */
+export type PhoneEvent =
+  | { type: 'offer'; sdp: string }
+  | { type: 'ice'; candidate: unknown }
+  | { type: 'disconnected' }
+  | { type: 'expired' };

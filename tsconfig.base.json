@@ -4,7 +4,11 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2023"],
+    /* The shared floor. DOM is here for the web-standard globals that run in
+       BOTH Chromium and Node (URL in @novarec/shared) — every package that
+       imports @novarec/shared type-checks its source, so this cannot live in one
+       package's config. Node-only configs narrow `lib` back to ES2023. */
+    "lib": ["ES2023", "DOM"],
     "types": [],
 
     /* Strictness — spec requires strict mode and no `any`. */

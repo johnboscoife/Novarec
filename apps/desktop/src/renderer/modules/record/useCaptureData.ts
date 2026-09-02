@@ -12,6 +12,9 @@ import {
   type SourceList,
 } from '@novarec/shared';
 
+/** Coalesce bursts of `devicechange` from a flapping virtual-camera driver. */
+const DEVICE_CHANGE_DEBOUNCE_MS = 400;
+
 // Responses are re-validated in the renderer (defense in depth; main validates too).
 const DisplayListSchema = z.array(DisplayInfoSchema);
 
@@ -54,19 +57,39 @@ export function useMediaDevices() {
   const client = useQueryClient();
 
   useEffect(() => {
+    // Debounced: some virtual-camera drivers (phone-webcam helpers in
+    // particular) register and unregister repeatedly, firing `devicechange` in
+    // bursts. Re-enumerating on every one made the camera list flicker and
+    // could yank the selection out from under the user mid-click.
+    let timer = 0;
     const refresh = () => {
-      void client.invalidateQueries({ queryKey: ['media-devices'] });
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        void client.invalidateQueries({ queryKey: ['media-devices'] });
+      }, DEVICE_CHANGE_DEBOUNCE_MS);
     };
     navigator.mediaDevices.addEventListener('devicechange', refresh);
-    return () => navigator.mediaDevices.removeEventListener('devicechange', refresh);
+    return () => {
+      window.clearTimeout(timer);
+      navigator.mediaDevices.removeEventListener('devicechange', refresh);
+    };
   }, [client]);
 
   return useQuery<CaptureSource[]>({
     queryKey: ['media-devices'],
     queryFn: async () => {
       const devices = await navigator.mediaDevices.enumerateDevices();
+      // De-dupe by id: a driver mid-reinstall can be reported twice, which
+      // showed the same camera twice in the picker.
+      const seen = new Set<string>();
       return devices
         .filter((d) => d.kind === 'videoinput' || d.kind === 'audioinput')
+        .filter((d) => {
+          const key = `${d.kind}:${d.deviceId}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
         .map((d) =>
           deviceSource(
             {

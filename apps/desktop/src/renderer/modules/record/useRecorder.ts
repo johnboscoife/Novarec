@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TrackConfig } from '@novarec/shared';
 import { useAppStore } from '../../store.js';
-import { MultiTrackRecorder } from './recorder.js';
+import { MultiTrackRecorder, type RecorderOptions } from './recorder.js';
 
 export type RecordingState = 'idle' | 'recording' | 'paused';
 
@@ -15,11 +15,16 @@ export interface RecorderControls {
     configs: TrackConfig[],
     targetFps: number,
     providedStreams?: Record<string, MediaStream>,
+    options?: RecorderOptions,
   ): Promise<void>;
   pause(): Promise<void>;
   resume(): Promise<void>;
   stop(): Promise<void>;
   setMicMuted(muted: boolean): void;
+  /** Bookmark the current moment; becomes a chapter in the export. */
+  addMarker(label?: string): void;
+  /** How many markers this take has, for the UI. */
+  markerCount: number;
 }
 
 export function useRecorder(): RecorderControls {
@@ -29,6 +34,7 @@ export function useRecorder(): RecorderControls {
   const [error, setError] = useState<string | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [lastRecordingDir, setLastRecordingDir] = useState<string | null>(null);
+  const [markerCount, setMarkerCount] = useState(0);
 
   const startedAt = useRef(0);
   const pausedAt = useRef(0);
@@ -68,6 +74,7 @@ export function useRecorder(): RecorderControls {
       configs: TrackConfig[],
       targetFps: number,
       providedStreams?: Record<string, MediaStream>,
+      options?: RecorderOptions,
     ) => {
       // Guard against a double-start (rapid clicks, or start during an in-flight
       // stop): a second recorder would overwrite the ref and orphan the first.
@@ -76,6 +83,7 @@ export function useRecorder(): RecorderControls {
       setSegmentCount(0);
       setElapsedMs(0);
       setLastRecordingDir(null);
+      setMarkerCount(0);
       const recorder = new MultiTrackRecorder({
         onSegmentCount: (n) => setSegmentCount(n),
         onError: (message) => setError(message),
@@ -84,7 +92,7 @@ export function useRecorder(): RecorderControls {
       startedAt.current = performance.now();
       pausedAccumMs.current = 0;
       try {
-        await recorder.start(configs, targetFps, providedStreams);
+        await recorder.start(configs, targetFps, providedStreams, options);
         setState('recording');
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not start recording');
@@ -126,6 +134,30 @@ export function useRecorder(): RecorderControls {
     recorderRef.current?.setMicMuted(muted);
   }, []);
 
+  /**
+   * Bookmark the current moment. Timed from the same clock the segment
+   * durations use, so the marker lands where the user actually pressed it —
+   * and written through to disk immediately rather than held here, so it
+   * survives a crash exactly as the footage does.
+   */
+  const addMarker = useCallback((label?: string) => {
+    const recordingId = recorderRef.current?.id;
+    if (!recordingId) return;
+    const atMs = Math.max(0, performance.now() - startedAt.current - pausedAccumMs.current);
+    setMarkerCount((n) => n + 1);
+    void window.novarec
+      .addMarker({
+        recordingId,
+        marker: {
+          id: crypto.randomUUID(),
+          atMs,
+          label: label ?? '',
+          color: '#3b82f6',
+        },
+      })
+      .catch(() => undefined);
+  }, []);
+
   return {
     state,
     elapsedMs,
@@ -137,5 +169,7 @@ export function useRecorder(): RecorderControls {
     resume,
     stop,
     setMicMuted,
+    addMarker,
+    markerCount,
   };
 }

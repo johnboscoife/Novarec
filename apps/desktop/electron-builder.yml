@@ -1,6 +1,6 @@
 appId: com.novarec.app
 productName: NovaRec
-copyright: Copyright © 2026 NovaRec
+copyright: Copyright © 2026 Ife Solutions Ltd
 # electron-builder 26 needs an exact Electron version; also pinned in
 # package.json devDependencies for reproducible installs.
 electronVersion: 43.2.0
@@ -37,6 +37,12 @@ publish:
 
 win:
   icon: build/icon.png
+  # The publisher shown by Windows comes from the signature, so it appears once
+  # these builds are code-signed — electron-builder 26 takes it as
+  # `win.signtoolOptions.publisherName` (setting it on an UNSIGNED build makes
+  # electron-updater's signature check fail, so it is deliberately absent).
+  # Until then, "Ife Solutions Ltd" reaches the executable via `copyright` above
+  # and the `author` field in package.json (the exe's CompanyName).
   target:
     - nsis
   artifactName: ${productName}-${version}-setup.${ext}
@@ -45,6 +51,17 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  # Terms of Use + MIT licence + privacy notice, shown as the agreement page the
+  # user must accept before installing.
+  license: build/license.txt
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: NovaRec
+  menuCategory: false
+  uninstallDisplayName: ${productName} ${version}
+  runAfterFinish: true
+  # Uninstalling must never destroy someone's recordings or settings.
+  deleteAppDataOnUninstall: false
 
 mac:
   target:

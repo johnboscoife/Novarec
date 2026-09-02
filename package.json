@@ -4,7 +4,7 @@
   "private": true,
   "description": "Record, meet, and stream from one shared capture engine.",
   "license": "MIT",
-  "author": "NovaRec",
+  "author": "Ife Solutions Ltd",
   "type": "module",
   "packageManager": "pnpm@9.15.0",
   "engines": {

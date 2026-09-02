@@ -4,12 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   extractFfmpegError,
+  formatExitCode,
   ffmpegAvailable,
   parseFfmpegProgressMs,
   resolveFfmpegPath,
   runFfmpeg,
 } from './ffmpeg-runner.js';
-import { exportRecording } from './export-recording.js';
+import { exportRecording, shouldTryNextEncoder } from './export-recording.js';
 import type { ExportSettings } from '@novarec/shared';
 
 describe('parseFfmpegProgressMs (pure)', () => {
@@ -31,6 +32,27 @@ describe('extractFfmpegError (pure)', () => {
   });
   it('falls back to the last line when nothing matches', () => {
     expect(extractFfmpegError('line one\nline two\n')).toBe('line two');
+  });
+
+  // Regression: FFmpeg rewrites its status line in place with a bare CR and no
+  // newline. Splitting on /\r?\n/ returned the whole progress stream as one
+  // "line", so a failed export reported a wall of `frame=... size=... speed=...`
+  // instead of the actual error.
+  it('ignores CR-delimited progress lines and finds the real error after them', () => {
+    const progress =
+      'frame=11729 fps= 72 q=26.0 size= 8448kB time=00:03:15.45 bitrate= 354.1kbits/s speed= 1.2x\r' +
+      'frame=13831 fps= 76 q=26.0 size= 9728kB time=00:03:50.48 bitrate= 345.8kbits/s speed=1.27x\r';
+    const stderr = `${progress}[mp4 @ 0000] Invalid data found when processing input\nConversion failed!\n`;
+    const detail = extractFfmpegError(stderr);
+    expect(detail).toContain('Invalid data found when processing input');
+    expect(detail).not.toContain('bitrate=');
+  });
+
+  it('returns nothing usable when stderr is only progress spam', () => {
+    const progress =
+      'frame=11729 fps= 72 q=26.0 size= 8448kB time=00:03:15.45 bitrate= 354.1kbits/s speed= 1.2x\r';
+    // Better to report the exit code alone than to quote a progress line as the error.
+    expect(extractFfmpegError(progress)).toBe('');
   });
 });
 
@@ -90,4 +112,52 @@ describe.skipIf(!hasFfmpeg)('export with real FFmpeg', () => {
       expect(lastProgress).toBeGreaterThan(0);
     },
   );
+});
+
+describe('formatExitCode (pure)', () => {
+  it('shows Windows unsigned exit codes as their signed value', () => {
+    // FFmpeg's -1 arrives from Windows as 4294967295.
+    expect(formatExitCode(4294967295)).toBe('-1');
+  });
+
+  it('passes ordinary codes through', () => {
+    expect(formatExitCode(1)).toBe('1');
+    expect(formatExitCode(0)).toBe('0');
+    expect(formatExitCode(null)).toBe('unknown');
+  });
+});
+
+describe('shouldTryNextEncoder (pure)', () => {
+  const err = (m: string): Error => new Error(m);
+
+  // Regression: a machine with no NVIDIA GPU fails h264_nvenc at init, and
+  // FFmpeg reports that as an EPERM out of the filter graph. Matching
+  // "Operation not permitted" as a filesystem problem made a missing driver
+  // fail the entire export instead of falling back to QuickSync/software.
+  it('falls back when a GPU encoder cannot open, despite the EPERM wording', () => {
+    expect(
+      shouldTryNextEncoder(
+        'h264_nvenc',
+        err('FFmpeg failed (exit code -1): Error while filtering: Operation not permitted'),
+      ),
+    ).toBe(true);
+  });
+
+  it('falls back for an unknown/unbuilt encoder', () => {
+    expect(shouldTryNextEncoder('h264_qsv', err("Unknown encoder 'h264_qsv'"))).toBe(true);
+  });
+
+  it('falls back when a GPU encoder dies mid-encode', () => {
+    expect(shouldTryNextEncoder('h264_amf', err('FFmpeg failed (exit code -1): device lost'))).toBe(
+      true,
+    );
+  });
+
+  it('does NOT fall back when the disk is full — every encoder hits that', () => {
+    expect(shouldTryNextEncoder('h264_nvenc', err('No space left on device'))).toBe(false);
+  });
+
+  it('does NOT fall back from the software encoder — nothing slower remains', () => {
+    expect(shouldTryNextEncoder('libx264', err('some mid-stream failure'))).toBe(false);
+  });
 });

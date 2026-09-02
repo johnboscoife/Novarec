@@ -1,6 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    // Node-only package: narrow back off the base's DOM lib. @types/node still
+    // supplies the universal globals (URL, fetch).
+    "lib": ["ES2023"],
     "types": ["node"]
   },
   "include": ["src"]

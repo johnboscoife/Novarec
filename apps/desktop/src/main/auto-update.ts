@@ -19,7 +19,20 @@ export function initAutoUpdate(): void {
       // Dynamic import so a build that doesn't package electron-updater simply
       // skips updates rather than failing at startup.
       const updater = await import('electron-updater');
-      const autoUpdater = updater.autoUpdater;
+      // electron-updater is CommonJS. Bundled into the CJS main output, the
+      // import namespace exposes the module under `.default` rather than as
+      // named exports, so reading `updater.autoUpdater` gave undefined — and
+      // the resulting TypeError was swallowed by the catch below as "updates
+      // unavailable". Auto-update therefore never ran in ANY packaged build,
+      // silently. Accept either shape.
+      const autoUpdater =
+        updater.autoUpdater ??
+        (updater as unknown as { default?: { autoUpdater?: typeof updater.autoUpdater } }).default
+          ?.autoUpdater;
+      if (!autoUpdater) {
+        console.info('Auto-update unavailable: electron-updater exposed no autoUpdater.');
+        return;
+      }
       autoUpdater.autoDownload = true;
       autoUpdater.autoInstallOnAppQuit = true;
       autoUpdater.on('error', (err: Error) => {

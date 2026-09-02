@@ -80,6 +80,15 @@ Significant decisions are recorded as ADRs in
 - Redacted pixels are never written to disk.
 - Telemetry is strictly opt-in and anonymized; see the Settings screen.
 
-## License
+## Legal
 
-[MIT](LICENSE).
+NovaRec is published by **Ife Solutions Ltd**.
+
+- [MIT Licence](LICENSE)
+- [Terms of Use](docs/TERMS.md)
+- [Privacy Policy](docs/PRIVACY.md) — recordings stay on your machine; telemetry
+  is off by default
+- [Third-party notices](docs/THIRD-PARTY-NOTICES.md) — note that the bundled
+  FFmpeg binary is **GPL-3.0-or-later**
+
+The Windows installer shows these terms as an agreement page before installing.

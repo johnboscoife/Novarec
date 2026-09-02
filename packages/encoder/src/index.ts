@@ -14,3 +14,4 @@ export * from './export-queue.js';
 export * from './adaptive-bitrate.js';
 export * from './ffmpeg-runner.js';
 export * from './export-recording.js';
+export * from './chapters.js';

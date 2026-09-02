@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { readdir, rm, stat } from 'node:fs/promises';
+import { appendFile, readFile, readdir, rm, stat, statfs } from 'node:fs/promises';
 import { basename, join, resolve, sep } from 'node:path';
 import { app } from 'electron';
 import {
@@ -11,6 +11,8 @@ import {
   totalDurationMs,
 } from '@novarec/encoder';
 import {
+  MarkerSchema,
+  type Marker,
   trackMediaKind,
   type OrphanedRecording,
   type RecordingStatus,
@@ -294,4 +296,62 @@ export async function recover(dir: string): Promise<RecoveryResult> {
     if (!outputPath) outputPath = recovered.outputPath;
   }
   return { recordingId: basename(dir), outputPath, segmentCount, durationMs };
+}
+
+/** File holding a recording's markers, one JSON object per line. */
+const MARKERS_FILENAME = 'markers.jsonl';
+
+/**
+ * Record a marker at `atMs` into the recording's own folder.
+ *
+ * Append-only, like the segment manifest, and written while recording rather
+ * than held in renderer memory: a marker dropped 40 minutes into a take must
+ * survive the same crash the footage does. Failing to write one must never
+ * disturb the recording, so errors are swallowed — a lost bookmark is not worth
+ * a lost take.
+ */
+export async function addMarker(recordingId: string, marker: Marker): Promise<void> {
+  const session = sessions.get(recordingId);
+  if (!session) return;
+  const line = `${JSON.stringify(marker)}\n`;
+  await appendFile(join(session.dir, MARKERS_FILENAME), line, 'utf8').catch(() => undefined);
+}
+
+/**
+ * Read back a finished recording's markers. Tolerates a torn final line, which
+ * is what a crash mid-append leaves behind.
+ */
+export async function readMarkers(recordingDir: string): Promise<Marker[]> {
+  const text = await readFile(join(recordingDir, MARKERS_FILENAME), 'utf8').catch(() => '');
+  const markers: Marker[] = [];
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      markers.push(MarkerSchema.parse(JSON.parse(line)));
+    } catch {
+      // A partially written last line; everything before it is still good.
+    }
+  }
+  return markers;
+}
+
+/**
+ * Free space on the volume recordings are written to.
+ *
+ * Reported before a take starts rather than discovered during one: the recorder
+ * survives a full disk (it seals what it has and stops cleanly), but the take is
+ * still cut short, and that is worth a word of warning beforehand.
+ */
+export async function vaultFreeSpace(): Promise<{ freeBytes: number; totalBytes: number }> {
+  try {
+    const stats = await statfs(vault());
+    return {
+      freeBytes: stats.bavail * stats.bsize,
+      totalBytes: stats.blocks * stats.bsize,
+    };
+  } catch {
+    // An unreadable volume must not block recording — report "unknown" as zero
+    // and let the UI stay quiet rather than cry wolf.
+    return { freeBytes: 0, totalBytes: 0 };
+  }
 }

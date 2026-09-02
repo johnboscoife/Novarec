@@ -1,9 +1,9 @@
 {
   "name": "@novarec/desktop",
-  "version": "0.0.32",
+  "version": "0.0.45",
   "private": true,
   "description": "NovaRec — record, meet, and stream from one shared capture engine.",
-  "author": "NovaRec",
+  "author": "Ife Solutions Ltd",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -17,14 +17,17 @@
   "dependencies": {
     "@novarec/capture": "workspace:*",
     "@novarec/encoder": "workspace:*",
+    "@novarec/overlay": "workspace:*",
     "@novarec/shared": "workspace:*",
     "@novarec/ui": "workspace:*",
     "@tanstack/react-query": "^5.101.4",
     "electron-updater": "^6.8.9",
     "ffmpeg-static": "^5.2.0",
     "livekit-client": "^2.20.2",
+    "qrcode-generator": "^2.0.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "selfsigned": "^2.4.1",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
   },

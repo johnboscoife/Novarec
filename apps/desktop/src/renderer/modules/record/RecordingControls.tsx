@@ -19,7 +19,7 @@ export function RecordingControls({
   canStart,
   onStart,
 }: RecordingControlsProps): ReactElement {
-  const { state, elapsedMs, segmentCount, error } = recorder;
+  const { state, elapsedMs, segmentCount, error, markerCount } = recorder;
   const active = state !== 'idle';
   const statusLabel =
     state === 'idle' ? 'Not recording' : state === 'paused' ? 'Paused' : 'Recording';
@@ -59,6 +59,21 @@ export function RecordingControls({
               className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition enabled:hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-surface2 disabled:text-muted-app"
             >
               Record
+            </button>
+          )}
+          {active && (
+            // Discoverable alongside the global shortcut: a feature reachable
+            // only by a key combination is a feature most people never find.
+            <button
+              type="button"
+              onClick={() => recorder.addMarker()}
+              title="Mark this moment (Ctrl+Shift+M) — becomes a chapter in the export"
+              className="rounded-lg bg-surface2 px-3 py-2 text-sm text-app2 transition hover:text-app"
+            >
+              Mark
+              {markerCount > 0 && (
+                <span className="ml-1.5 text-xs text-blue-300">{markerCount}</span>
+              )}
             </button>
           )}
           {state === 'recording' && (

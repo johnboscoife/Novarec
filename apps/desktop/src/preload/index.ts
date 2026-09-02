@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
 import type { ControlAction, HotkeyAction, RecordControlState, WebcamShape } from '@novarec/shared';
-import type { NovaRecApi } from './api.js';
+import type { NovaRecApi, PhoneEvent } from './api.js';
 
 const api: NovaRecApi = {
   getInfo: () => ipcRenderer.invoke('app:getInfo'),
@@ -19,7 +19,13 @@ const api: NovaRecApi = {
   onWebcamConfig: (callback) => {
     const listener = (
       _event: IpcRendererEvent,
-      config: { deviceId: string | null; shape: WebcamShape; sizePx: number },
+      config: {
+        deviceId: string | null;
+        shape: WebcamShape;
+        sizePx: number;
+        zoom: number;
+        mirror: boolean;
+      },
     ): void => callback(config);
     ipcRenderer.on('webcam:config', listener);
     return () => ipcRenderer.removeListener('webcam:config', listener);
@@ -59,6 +65,20 @@ const api: NovaRecApi = {
       callback(progress);
     ipcRenderer.on('export:progress', listener);
     return () => ipcRenderer.removeListener('export:progress', listener);
+  },
+
+  addMarker: (payload) => ipcRenderer.invoke('recording:marker', payload),
+  freeSpace: () => ipcRenderer.invoke('recording:freeSpace'),
+
+  // --- Phone camera over Wi-Fi ---
+  startPhoneSession: (payload) => ipcRenderer.invoke('phone:start', payload),
+  stopPhoneSession: () => ipcRenderer.invoke('phone:stop'),
+  sendPhoneAnswer: (payload) => ipcRenderer.invoke('phone:answer', payload),
+  sendPhoneIce: (payload) => ipcRenderer.invoke('phone:ice', payload),
+  onPhoneEvent: (callback) => {
+    const listener = (_event: IpcRendererEvent, phoneEvent: PhoneEvent) => callback(phoneEvent);
+    ipcRenderer.on('phone:event', listener);
+    return () => ipcRenderer.removeListener('phone:event', listener);
   },
 
   onHotkey: (callback) => {

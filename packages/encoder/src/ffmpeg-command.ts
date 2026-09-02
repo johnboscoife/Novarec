@@ -25,7 +25,8 @@ const PIP_MARGIN = 24;
 // list until one succeeds, so a machine without NVENC still gets fast QSV/AMF
 // encoding, and everything ultimately falls back to the always-present software
 // encoder.
-const VIDEO_ENCODERS: Record<Exclude<VideoCodec, 'none'>, { sw: string; hw: string[] }> = {
+// `copy` and `none` are absent by design: neither names an encoder.
+const VIDEO_ENCODERS: Record<Exclude<VideoCodec, 'none' | 'copy'>, { sw: string; hw: string[] }> = {
   h264: { sw: 'libx264', hw: ['h264_nvenc', 'h264_qsv', 'h264_amf'] },
   hevc: { sw: 'libx265', hw: ['hevc_nvenc', 'hevc_qsv', 'hevc_amf'] },
   av1: { sw: 'libaom-av1', hw: ['av1_nvenc', 'av1_qsv'] },
@@ -38,14 +39,17 @@ function isSoftwareEncoder(encoder: string): boolean {
 
 /** Ordered list of concrete video encoders the runner should try, best first. */
 export function videoEncoderCandidates(settings: ExportSettings): string[] {
-  if (settings.videoCodec === 'none') return [];
-  const entry = VIDEO_ENCODERS[settings.videoCodec];
+  // A stream copy touches no pixels, so there is no encoder to pick and nothing
+  // to fall back to when a GPU is missing.
+  if (settings.videoCodec === 'none' || settings.videoCodec === 'copy') return [];
+  const entry = VIDEO_ENCODERS[settings.videoCodec as Exclude<VideoCodec, 'none' | 'copy'>];
   return settings.hardwareEncode ? [...entry.hw, entry.sw] : [entry.sw];
 }
 
 function resolveVideoEncoder(settings: ExportSettings, override: string | undefined): string {
+  if (settings.videoCodec === 'copy') return 'copy';
   if (override) return override;
-  const entry = VIDEO_ENCODERS[settings.videoCodec as Exclude<VideoCodec, 'none'>];
+  const entry = VIDEO_ENCODERS[settings.videoCodec as Exclude<VideoCodec, 'none' | 'copy'>];
   return settings.hardwareEncode ? entry.hw[0]! : entry.sw;
 }
 
@@ -57,7 +61,7 @@ function presetArgs(encoder: string): string[] {
   return [];
 }
 
-const AUDIO_ENCODERS: Record<Exclude<AudioCodec, 'none'>, string> = {
+const AUDIO_ENCODERS: Record<Exclude<AudioCodec, 'none' | 'copy'>, string> = {
   aac: 'aac',
   opus: 'libopus',
   mp3: 'libmp3lame',
@@ -91,6 +95,12 @@ export function buildFfmpegArgs(
   inputs: readonly FfmpegInput[],
   outputPath: string,
   videoEncoder?: string,
+  /**
+   * FFMETADATA file describing chapters, if the recording has markers. Added as
+   * a trailing input so it cannot disturb the stream indices the filter graph
+   * refers to.
+   */
+  chaptersPath?: string,
 ): string[] {
   // Composite (camera PiP + audio mix) only when it's actually needed — a
   // camera to overlay, or more than one audio track to blend. Screen-only and
@@ -99,11 +109,17 @@ export function buildFfmpegArgs(
   const cameras = inputs.filter((i) => i.role === 'camera').length;
   const audios = inputs.filter((i) => i.role === 'audio').length;
   const needsComposite =
-    settings.container !== 'gif' && ((cameras > 0 && settings.videoCodec !== 'none') || audios > 1);
-  if (needsComposite) return buildCompositeArgs(settings, inputs, outputPath, videoEncoder);
+    settings.container !== 'gif' &&
+    settings.videoCodec !== 'copy' &&
+    ((cameras > 0 && settings.videoCodec !== 'none') || audios > 1);
+  if (needsComposite)
+    return buildCompositeArgs(settings, inputs, outputPath, videoEncoder, chaptersPath);
 
   const args: string[] = ['-y'];
   for (const input of inputs) args.push('-i', input.path);
+  // GIF carries no chapter metadata, so don't add the input at all there.
+  const chapters = settings.container === 'gif' ? undefined : chaptersPath;
+  if (chapters) args.push('-i', chapters);
 
   const scale = scaleFilter(settings.width, settings.height);
 
@@ -120,15 +136,32 @@ export function buildFfmpegArgs(
     args.push('-vn');
   } else {
     args.push(...videoCodecArgs(settings, resolveVideoEncoder(settings, videoEncoder)));
-    if (scale) args.push('-vf', scale);
+    // A scale filter would force a re-encode, defeating the point of a copy.
+    if (scale && settings.videoCodec !== 'copy') args.push('-vf', scale);
   }
 
   args.push(...audioCodecArgs(settings));
+  args.push(...faststartArgs(settings));
+  if (chapters) args.push('-map_metadata', String(inputs.length));
   args.push(outputPath);
   return args;
 }
 
+/**
+ * Move the MP4 index to the FRONT of the file. Without this the `moov` atom is
+ * written last, which plays fine from a local disk but makes the file unusable
+ * until fully downloaded — so uploads and shared links stall. Costs one extra
+ * pass over the already-written file.
+ */
+function faststartArgs(settings: ExportSettings): string[] {
+  const isMp4Family = settings.container === 'mp4' || settings.container === 'mov';
+  return isMp4Family ? ['-movflags', '+faststart'] : [];
+}
+
 function videoCodecArgs(settings: ExportSettings, encoder: string): string[] {
+  // Rate control, presets and frame rate all describe an encode that isn't
+  // happening; passing them alongside `copy` makes FFmpeg error out.
+  if (settings.videoCodec === 'copy') return ['-c:v', 'copy'];
   const out = ['-c:v', encoder];
   out.push(...presetArgs(encoder));
   out.push(...rateControlArgs(settings.rateControl, encoder));
@@ -138,7 +171,8 @@ function videoCodecArgs(settings: ExportSettings, encoder: string): string[] {
 
 function audioCodecArgs(settings: ExportSettings): string[] {
   if (settings.audioCodec === 'none') return ['-an'];
-  const out = ['-c:a', AUDIO_ENCODERS[settings.audioCodec]];
+  if (settings.audioCodec === 'copy') return ['-c:a', 'copy'];
+  const out = ['-c:a', AUDIO_ENCODERS[settings.audioCodec as Exclude<AudioCodec, 'none' | 'copy'>]];
   if (settings.rateControl.mode !== 'crf' && settings.audioCodec !== 'flac') {
     out.push('-b:a', `${settings.rateControl.bitrateKbps}k`);
   }
@@ -156,9 +190,13 @@ function buildCompositeArgs(
   inputs: readonly FfmpegInput[],
   outputPath: string,
   videoEncoder?: string,
+  chaptersPath?: string,
 ): string[] {
   const args: string[] = ['-y'];
   for (const input of inputs) args.push('-i', input.path);
+  // Appended LAST: the filter graph addresses inputs by index, so a metadata
+  // input inserted anywhere earlier would silently re-point every stream label.
+  if (chaptersPath) args.push('-i', chaptersPath);
 
   const screenIdx = inputs.findIndex((i) => i.role === 'screen');
   const cameraIdx = inputs.findIndex((i) => i.role === 'camera');
@@ -212,6 +250,8 @@ function buildCompositeArgs(
       : ['-vn']),
   );
   args.push(...(wantAudio ? audioCodecArgs(settings) : ['-an']));
+  args.push(...faststartArgs(settings));
+  if (chaptersPath) args.push('-map_metadata', String(inputs.length));
 
   args.push(outputPath);
   return args;

@@ -20,6 +20,8 @@ interface WebcamConfig {
   deviceId: string | null;
   shape: WebcamShape;
   sizePx: number;
+  zoom: number;
+  mirror: boolean;
   displayBounds?: Bounds | null;
 }
 
@@ -119,7 +121,12 @@ export function showWebcam(config: WebcamConfig): void {
     if (!win.isDestroyed()) win.showInactive();
   });
 
-  loadOverlayRoute(win, { deviceId: config.deviceId ?? '', shape: config.shape });
+  loadOverlayRoute(win, {
+    deviceId: config.deviceId ?? '',
+    shape: config.shape,
+    zoom: String(config.zoom),
+    mirror: config.mirror ? '1' : '0',
+  });
   overlay = win;
 }
 

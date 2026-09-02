@@ -1,0 +1,146 @@
+NovaRec - Terms of Use, Licence and Privacy Notice
+Publisher: Ife Solutions Ltd
+Version of this notice: 28 August 2026
+
+Please read this before installing. Installing NovaRec means you accept these
+terms.
+
+================================================================================
+1. WHAT NOVAREC IS
+================================================================================
+
+NovaRec is a desktop application for recording your screen, camera, microphone
+and system audio, for running meetings, and for exporting the result as a video
+file. It runs on your machine. It requires no account.
+
+================================================================================
+2. LICENCE (MIT)
+================================================================================
+
+Copyright (c) 2026 Ife Solutions Ltd
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+================================================================================
+3. YOUR RECORDINGS ARE YOURS
+================================================================================
+
+Ife Solutions Ltd claims no ownership of, and no licence over, anything you
+record, edit or export with NovaRec. Recordings are written to your own machine.
+Ife Solutions Ltd has no access to them.
+
+================================================================================
+4. YOUR RESPONSIBILITIES
+================================================================================
+
+CONSENT TO RECORD. Recording people, calls and meetings is regulated in many
+places, and the rules differ by jurisdiction. You are responsible for obtaining
+whatever consent the law requires from everyone being recorded. NovaRec shows an
+always-visible recording indicator, and NovaRec meetings require participant
+consent before recording starts - these are aids, not legal advice, and they do
+not transfer this responsibility to Ife Solutions Ltd.
+
+CONTENT. You must not use NovaRec to record, distribute or process material you
+have no right to, or to break any applicable law.
+
+THIRD-PARTY SERVICES. If you connect NovaRec to a third-party service (for
+example a LiveKit server or a Google account), that service's own terms apply.
+
+================================================================================
+5. PRIVACY - THE SHORT VERSION
+================================================================================
+
+NovaRec is a local application. Your recordings, settings and any credentials
+you enter stay on your machine. Ife Solutions Ltd operates no server that
+receives them.
+
+STORED ON YOUR MACHINE ONLY:
+  - recordings and exported files, in the folder you choose;
+  - capture setup, preferences and export history;
+  - any LiveKit or Google credentials you enter, encrypted at rest by the
+    operating system's own key store (DPAPI on Windows).
+
+NETWORK USE. NovaRec is usable entirely offline. It contacts the network only
+to: (a) check GitHub Releases for updates, which reveals your IP address and
+version to GitHub; (b) carry meeting audio/video to the LiveKit server you
+configured, if you start a meeting; (c) hand a Google Meet link to your browser,
+if you open one; (d) accept a connection from your own phone ON YOUR LOCAL
+NETWORK ONLY, if you use the "Connect a phone" camera feature - that video
+travels directly between your phone and this computer, never through any
+server on the internet; and (e) send anonymous usage telemetry, if and only if
+you switch it on.
+
+PHONE CAMERA PAIRING. If you pair a phone as a camera, NovaRec briefly listens
+for a connection on your local network. It runs only while pairing, shuts down
+when you disconnect, when the app quits, or after five minutes idle, and
+requires the one-time token from the QR code on every request. It serves one
+page and a fixed set of connection-setup endpoints, and cannot read or serve
+any file on your computer. Full detail is in docs/PRIVACY.md.
+
+TELEMETRY IS OFF BY DEFAULT. It stays off until you enable it in
+Settings > Privacy. When enabled it sends anonymous usage events only. NovaRec
+never sends file names, folder paths, window or screen titles, recording
+content, transcripts, or anything derived from them.
+
+The full privacy policy is in docs/PRIVACY.md in the project repository.
+
+================================================================================
+6. NO WARRANTY - PLEASE READ
+================================================================================
+
+NovaRec is provided "as is", without warranty of any kind, as stated in section
+2. It is engineered to be resilient: recordings are sealed to disk continuously
+and interrupted takes are recoverable. Even so, no software can guarantee that a
+recording will always succeed.
+
+DO NOT RELY ON NOVAREC AS THE SOLE RECORD OF ANYTHING YOU CANNOT AFFORD TO LOSE.
+
+To the fullest extent permitted by law, Ife Solutions Ltd is not liable for lost
+recordings, lost data, lost profits or business interruption arising from the
+software or its use. Nothing here limits liability that cannot be limited by
+law.
+
+================================================================================
+7. UPDATES AND UNINSTALLING
+================================================================================
+
+NovaRec can check for and install updates automatically. You may uninstall it at
+any time. UNINSTALLING DOES NOT DELETE YOUR RECORDINGS - removing the app never
+destroys your work. Delete them yourself if you want them gone.
+
+================================================================================
+8. THIRD-PARTY COMPONENTS
+================================================================================
+
+NovaRec bundles third-party software under its own licences, including:
+
+  FFmpeg          GPL-3.0-or-later  (used for export; the full licence text is
+                                     installed alongside the binary as
+                                     ffmpeg.exe.LICENSE)
+  Electron        MIT (bundles Chromium, BSD-3-Clause, and Node.js, MIT)
+  React           MIT
+  LiveKit SDK     Apache-2.0
+  zod, zustand, TanStack Query, Tailwind CSS, electron-updater    MIT
+
+Full notices are in docs/THIRD-PARTY-NOTICES.md in the project repository.
+
+================================================================================
+9. CONTACT
+================================================================================
+
+Ife Solutions Ltd - https://github.com/johnboscoife/Novarec

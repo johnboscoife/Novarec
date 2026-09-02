@@ -1,4 +1,5 @@
-import { mkdir, open, readFile, readdir, stat } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 
 // A transient file lock (antivirus scan, Windows Search indexer, OneDrive sync)
 // briefly fails an open/write with EBUSY/EPERM/EACCES on the very machines we
@@ -45,26 +46,39 @@ export const nodeDisk: DiskIO = {
     }
   },
   async concatToFile(outputPath, inputPaths) {
-    const out = await open(outputPath, 'w');
+    // Build in a temp sibling and rename into place, never in the destination
+    // itself. Opening the destination 'w' truncates it INSTANTLY and then
+    // refills it over seconds: anything reading that path in the meantime (an
+    // export already running against this recording, a media player) sees a
+    // truncated file and fails mid-stream. A crash halfway through would leave
+    // the same wreckage behind permanently.
+    const tempPath = `${outputPath}.tmp-${randomUUID()}`;
     try {
-      for (const input of inputPaths) {
-        // Stream each source file through a bounded buffer rather than reading
-        // the whole segment (let alone the whole track) into memory at once.
-        const src = await open(input, 'r');
-        try {
-          const chunk = Buffer.allocUnsafe(1024 * 1024);
-          for (;;) {
-            const { bytesRead } = await src.read(chunk, 0, chunk.length, null);
-            if (bytesRead === 0) break;
-            await out.write(chunk.subarray(0, bytesRead));
+      const out = await open(tempPath, 'w');
+      try {
+        for (const input of inputPaths) {
+          // Stream each source file through a bounded buffer rather than reading
+          // the whole segment (let alone the whole track) into memory at once.
+          const src = await open(input, 'r');
+          try {
+            const chunk = Buffer.allocUnsafe(1024 * 1024);
+            for (;;) {
+              const { bytesRead } = await src.read(chunk, 0, chunk.length, null);
+              if (bytesRead === 0) break;
+              await out.write(chunk.subarray(0, bytesRead));
+            }
+          } finally {
+            await src.close();
           }
-        } finally {
-          await src.close();
         }
+        await out.sync();
+      } finally {
+        await out.close();
       }
-      await out.sync();
-    } finally {
-      await out.close();
+      await rename(tempPath, outputPath);
+    } catch (error) {
+      await rm(tempPath, { force: true }).catch(() => undefined);
+      throw error;
     }
   },
   async appendAndSync(path, data) {

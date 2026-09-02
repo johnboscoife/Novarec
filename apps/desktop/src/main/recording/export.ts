@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readdir, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { app } from 'electron';
-import { exportRecording, finalizeTrack } from '@novarec/encoder';
+import { buildChapterMetadata, exportRecording, finalizeTrack } from '@novarec/encoder';
+import { markersToChapters } from '@novarec/overlay';
 import type { ExportSettings } from '@novarec/shared';
 import { ffmpegBinaryPath } from '../ffmpeg-path.js';
 import { loadAppSettings } from '../app-settings-store.js';
 import { addHistoryEntry } from '../export-history-store.js';
-import { deleteRawRecording, isInsideVault } from './session.js';
+import { deleteRawRecording, isInsideVault, readMarkers } from './session.js';
 
 /**
  * Export a finished recording: finalize each track (concat its sealed fMP4
@@ -64,7 +65,34 @@ async function uniqueOutputPath(folder: string, container: string): Promise<stri
   return candidate;
 }
 
-export async function runExport(
+/**
+ * Exports run STRICTLY one at a time, enforced here in main.
+ *
+ * An export rewrites `track.mp4` inside the recording directory (finalize) and
+ * then reads it for the whole encode. Two overlapping exports of the same
+ * recording therefore have one re-finalizing the very file the other is still
+ * reading, and the first dies partway through with a decode error. The renderer
+ * keeps its own queue for the UI, but that is a convenience, not a guarantee —
+ * a reloaded renderer, a second window, or any other caller of `export:run`
+ * would sail straight past it. Main owns the invariant.
+ */
+let exportChain: Promise<unknown> = Promise.resolve();
+
+export function runExport(
+  recordingDir: string,
+  settings: ExportSettings,
+  onProgress?: (elapsedMs: number, totalMs: number) => void,
+): Promise<{ outputPath: string; durationMs: number }> {
+  const run = exportChain.then(
+    () => doExport(recordingDir, settings, onProgress),
+    () => doExport(recordingDir, settings, onProgress), // a failed export must not block the queue
+  );
+  // Swallow rejection on the chain only — callers still see the real result.
+  exportChain = run.catch(() => undefined);
+  return run;
+}
+
+async function doExport(
   recordingDir: string,
   settings: ExportSettings,
   onProgress?: (elapsedMs: number, totalMs: number) => void,
@@ -79,12 +107,26 @@ export async function runExport(
   for (const trackId of await trackDirs(recordingDir)) {
     const finalized = await finalizeTrack(join(recordingDir, trackId));
     if (finalized) {
-      const role = trackId === 'camera' ? 'camera' : trackId === 'screen' ? 'screen' : 'audio';
+      // `recording` is the single-file mode's one muxed track: it carries the
+      // video, so it must not be treated as an audio-only input.
+      const role =
+        trackId === 'camera'
+          ? 'camera'
+          : trackId === 'screen' || trackId === 'recording'
+            ? 'screen'
+            : 'audio';
       inputs.push({ path: finalized.path, role });
       durationMs = Math.max(durationMs, finalized.durationMs);
     }
   }
   if (inputs.length === 0) throw new Error('Nothing to export — no sealed segments found');
+
+  // Markers dropped during the take become real chapters in the exported file,
+  // so a bookmark made mid-recording is still useful in a player afterwards.
+  const chapters = markersToChapters(await readMarkers(recordingDir), durationMs);
+  const chapterMetadata = buildChapterMetadata(chapters, durationMs);
+  const chaptersPath = chapterMetadata ? join(recordingDir, 'chapters.ffmeta') : null;
+  if (chaptersPath && chapterMetadata) await writeFile(chaptersPath, chapterMetadata, 'utf8');
 
   const folder = await destinationFolder();
   const outputPath = await uniqueOutputPath(folder, settings.container);
@@ -98,6 +140,7 @@ export async function runExport(
       inputs,
       settings,
       outputPath: tempPath,
+      ...(chaptersPath ? { chaptersPath } : {}),
       ...(onProgress ? { onProgress: (elapsedMs) => onProgress(elapsedMs, durationMs) } : {}),
     });
     await rename(tempPath, outputPath);

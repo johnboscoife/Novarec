@@ -18,6 +18,12 @@ import {
 } from '@novarec/shared';
 import { getDisplays, listSources } from './capture/enumerate.js';
 import { beginRegionSelect } from './capture/region-window.js';
+import {
+  addDesktopCandidate,
+  setPhoneAnswer,
+  startPhoneSession,
+  stopPhoneSession,
+} from './phone/server.js';
 import { setPendingCaptureSource } from './capture/display-media.js';
 import { startProbeMotion, stopProbeMotion } from './capture/probe-motion.js';
 import { showWebcam, hideWebcam } from './overlays/webcam-window.js';
@@ -31,6 +37,7 @@ import { setConfirmOnExit, setRecordingActive, setStorageLocation } from './app-
 import { buildAccessToken, grantForRoom } from './meet/livekit-token.js';
 import { loadCaptureSettings, saveCaptureSettings } from './settings-store.js';
 import {
+  addMarker,
   deleteRawRecording,
   listOrphans,
   pauseRecording,
@@ -40,6 +47,7 @@ import {
   resumeRecording,
   startRecording,
   stopRecording,
+  vaultFreeSpace,
   writeFragment,
   writeInit,
 } from './recording/session.js';
@@ -61,12 +69,18 @@ import {
 /** Register an invoke handler that validates the request AND response with Zod. */
 function handleChannel<C extends IpcChannel>(
   channel: C,
-  handler: (request: IpcRequest<C>) => IpcResponse<C> | Promise<IpcResponse<C>>,
+  // The invoke event is passed through so a handler can push later messages
+  // back to the exact window that called it (the phone session does this),
+  // rather than broadcasting to every window.
+  handler: (
+    request: IpcRequest<C>,
+    event: IpcMainInvokeEvent,
+  ) => IpcResponse<C> | Promise<IpcResponse<C>>,
 ): void {
   const entry = ipcContract[channel];
-  ipcMain.handle(channel, async (_event: IpcMainInvokeEvent, raw: unknown) => {
+  ipcMain.handle(channel, async (event: IpcMainInvokeEvent, raw: unknown) => {
     const request = entry.request.parse(raw) as IpcRequest<C>;
-    return entry.response.parse(await handler(request));
+    return entry.response.parse(await handler(request, event));
   });
 }
 
@@ -179,6 +193,11 @@ export function registerIpcHandlers(): void {
     return { ok: true as const };
   });
   handleChannel('recording:stop', (req) => stopRecording(req.recordingId, req.atMs));
+  handleChannel('recording:marker', async (req) => {
+    await addMarker(req.recordingId, req.marker);
+    return { ok: true as const };
+  });
+  handleChannel('recording:freeSpace', () => vaultFreeSpace());
   handleChannel('recording:listOrphans', () => listOrphans());
   handleChannel('recording:recover', (req) => recover(req.dir));
   handleChannel('recording:revealVault', async () => {
@@ -198,6 +217,29 @@ export function registerIpcHandlers(): void {
     shell.showItemInFolder(req.path);
     return { ok: true as const };
   });
+  // --- Phone camera over Wi-Fi ---
+  // Main runs the local HTTPS server and relays signalling; the WebRTC peer (and
+  // therefore all media) lives in the renderer. Events are pushed to the window
+  // that started the session.
+  handleChannel('phone:start', async (req, event) => {
+    const sender = event.sender;
+    return startPhoneSession((phoneEvent) => {
+      if (!sender.isDestroyed()) sender.send('phone:event', phoneEvent);
+    }, req?.host);
+  });
+  handleChannel('phone:stop', async () => {
+    await stopPhoneSession();
+    return { ok: true as const };
+  });
+  handleChannel('phone:answer', (req) => {
+    setPhoneAnswer(req.sdp);
+    return { ok: true as const };
+  });
+  handleChannel('phone:ice', (req) => {
+    addDesktopCandidate(req.candidate);
+    return { ok: true as const };
+  });
+
   handleChannel('shell:openExternal', async (req) => {
     // Security: only ever hand http(s) URLs to the OS, never arbitrary schemes.
     if (!/^https?:\/\//i.test(req.url)) throw new Error('Only http(s) URLs can be opened');

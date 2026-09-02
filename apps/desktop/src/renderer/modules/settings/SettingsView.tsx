@@ -9,6 +9,7 @@ import {
 import { useAppInfo } from '../shell/useAppInfo.js';
 import { useAppSettings, useSaveAppSettings } from './useAppSettings.js';
 import { GOOGLE_MEET_ENABLED } from '../../featureFlags.js';
+import { CapacityCheck } from './CapacityCheck.js';
 
 const ACTION_LABELS: Record<HotkeyAction, string> = {
   startStop: 'Start / stop recording',
@@ -84,6 +85,8 @@ export function SettingsView(): ReactElement {
           />
         </Panel>
 
+        <CapacityCheck />
+
         <Panel title="Privacy">
           <ToggleRow
             label="Anonymous usage telemetry"
@@ -153,8 +156,55 @@ export function SettingsView(): ReactElement {
             ))}
           </ul>
         </Panel>
+
+        <LegalPanel />
       </div>
     </section>
+  );
+}
+
+/** Where the canonical legal documents live (the repository is public). */
+const DOCS_BASE = 'https://github.com/johnboscoife/Novarec/blob/master';
+const LEGAL_LINKS: readonly { label: string; url: string }[] = [
+  { label: 'Terms of Use', url: `${DOCS_BASE}/docs/TERMS.md` },
+  { label: 'Privacy Policy', url: `${DOCS_BASE}/docs/PRIVACY.md` },
+  { label: 'Licence (MIT)', url: `${DOCS_BASE}/LICENSE` },
+  { label: 'Third-party notices', url: `${DOCS_BASE}/docs/THIRD-PARTY-NOTICES.md` },
+];
+
+/**
+ * Publisher and the documents the installer made the user accept, reachable
+ * again after install — someone who agreed to terms must be able to re-read them.
+ */
+function LegalPanel(): ReactElement {
+  const info = useAppInfo();
+
+  return (
+    <Panel title="About & legal">
+      <Row label="Publisher" hint="NovaRec is published by Ife Solutions Ltd.">
+        <span className="text-sm text-app2">Ife Solutions Ltd</span>
+      </Row>
+      <Row label="Version">
+        <span className="text-sm text-app2">{info.data ? info.data.version : '—'}</span>
+      </Row>
+      <p className="text-xs leading-relaxed text-muted-app">
+        Your recordings stay on this machine. Telemetry is off unless you turn it on above, and
+        never includes file names, paths, window titles or recording content.
+      </p>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        {LEGAL_LINKS.map((link) => (
+          <button
+            key={link.url}
+            type="button"
+            onClick={() => void window.novarec.openExternal({ url: link.url })}
+            className="text-blue-400 hover:underline"
+          >
+            {link.label} →
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-dim-app">Copyright © 2026 Ife Solutions Ltd. MIT licensed.</p>
+    </Panel>
   );
 }
 

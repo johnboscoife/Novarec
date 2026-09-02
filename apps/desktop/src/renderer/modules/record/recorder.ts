@@ -1,4 +1,5 @@
 import type { TrackConfig } from '@novarec/shared';
+import { CroppedScreenStream, type RegionSpec } from './cropStream.js';
 
 /**
  * Multi-track recording from the renderer. Each enabled track (screen, camera,
@@ -39,6 +40,9 @@ const QUEUE_FLUSH_TIMEOUT_MS = 6000;
 const MAX_PENDING_CHUNKS = 40;
 const MAX_PENDING_BYTES = 512 * 1024 * 1024;
 const RESUME_PENDING_CHUNKS = 20;
+
+/** Track id used when the whole recording is written as one muxed file. */
+export const SINGLE_TRACK_ID = 'recording';
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -81,6 +85,7 @@ async function acquireStream(
   config: TrackConfig,
   targetFps: number,
   screenSourceId: string | null,
+  region: RegionSpec | null = null,
 ): Promise<MediaStream> {
   const media = navigator.mediaDevices;
   switch (config.kind) {
@@ -88,8 +93,16 @@ async function acquireStream(
       await window.novarec.setCaptureSource({ sourceId: config.sourceId ?? null, audio: false });
       // Cap capture to 1080p: encoding native 4K (e.g. a 3x-DPI display) at speed
       // is what stalls modest machines mid-recording. Chromium downscales for us.
+      //
+      // A region capture lifts that cap: what gets ENCODED is only the cropped
+      // rect (itself capped at 1080p), so reading near-native pixels costs one
+      // canvas draw and keeps a small region sharp instead of upscaling a
+      // downscaled frame.
+      const cap = region
+        ? { width: { max: 3840 }, height: { max: 2160 } }
+        : { width: { max: 1920 }, height: { max: 1080 } };
       return media.getDisplayMedia({
-        video: { frameRate: targetFps, width: { max: 1920 }, height: { max: 1080 } },
+        video: { frameRate: targetFps, ...cap },
         audio: false,
       });
     }
@@ -106,6 +119,19 @@ async function acquireStream(
     default:
       throw new Error(`Unsupported track kind: ${String(config.kind)}`);
   }
+}
+
+/** Optional capture tweaks that apply to the whole take. */
+export interface RecorderOptions {
+  /** Record only this region of the captured display (null = the full display). */
+  screenRegion?: RegionSpec | null;
+  /**
+   * Record ONE already-muxed file (video + mixed audio) instead of separate
+   * per-source tracks. The result is a finished, playable recording the moment
+   * it stops — no muxing pass afterwards. The cost is that the audio sources are
+   * summed at capture time and can no longer be balanced separately later.
+   */
+  singleFile?: boolean;
 }
 
 export interface RecorderCallbacks {
@@ -146,11 +172,27 @@ class TrackRecorder {
     this.recorder.onerror = () => this.onError(`${this.label} reported an error`);
     this.lastChunkAt = performance.now();
     this.recorder.start(TIMESLICE_MS);
-    // Watchdog: warn (once) if the source stops producing data, so a dead
-    // capture doesn't masquerade as a healthy recording.
+    // Watchdog: report a capture that has genuinely died, so it can't masquerade
+    // as a healthy recording.
+    //
+    // What counts as "died" differs by source. SCREEN capture is change-driven:
+    // Chromium delivers a frame only when the picture changes, so a still screen
+    // produces no data for as long as it stays still. Timing out on that reported
+    // a stall every time the user simply stopped moving — the ended/live state of
+    // the track is the only trustworthy signal there. AUDIO flows continuously
+    // even in silence, so for an audio-only track a long gap really is a fault.
     this.watchdog = window.setInterval(() => {
-      if (!this.recorder || this.recorder.state !== 'recording') return;
-      if (!this.stalled && performance.now() - this.lastChunkAt > STALL_TIMEOUT_MS) {
+      if (!this.recorder || this.recorder.state !== 'recording' || this.stalled) return;
+      const tracks = this.stream.getTracks();
+      if (tracks.length > 0 && tracks.every((t) => t.readyState === 'ended')) {
+        this.stalled = true;
+        this.onError(
+          `${this.label} stopped — the capture source ended (screen sharing stopped, or the ` +
+            'device was disconnected). You can stop; footage captured so far is saved.',
+        );
+        return;
+      }
+      if (!hasVideo && performance.now() - this.lastChunkAt > STALL_TIMEOUT_MS) {
         this.stalled = true;
         this.onError(
           `${this.label} stopped producing data — the capture source may have stalled. ` +
@@ -344,11 +386,64 @@ class ResilientAudioStream {
   }
 }
 
+/**
+ * Sums several microphones/system-audio streams into ONE audio track for
+ * single-file recording.
+ *
+ * The mic keeps its own gain node so muting still works on the mixed result —
+ * the whole point of mixing is that there is no longer a separate mic track to
+ * toggle.
+ */
+class AudioMixer {
+  private readonly ctx = new AudioContext();
+  private readonly dest = this.ctx.createMediaStreamDestination();
+  private readonly sources: MediaStreamAudioSourceNode[] = [];
+  private micGain: GainNode | null = null;
+  private added = 0;
+
+  add(stream: MediaStream, isMic: boolean): void {
+    if (stream.getAudioTracks().length === 0) return;
+    const source = this.ctx.createMediaStreamSource(stream);
+    const gain = this.ctx.createGain();
+    source.connect(gain).connect(this.dest);
+    this.sources.push(source);
+    if (isMic) this.micGain = gain;
+    this.added += 1;
+  }
+
+  async resume(): Promise<void> {
+    if (this.ctx.state === 'suspended') await this.ctx.resume().catch(() => undefined);
+  }
+
+  /** The mixed track, or null when nothing was added. */
+  track(): MediaStreamTrack | null {
+    return this.added > 0 ? (this.dest.stream.getAudioTracks()[0] ?? null) : null;
+  }
+
+  setMicMuted(muted: boolean): void {
+    if (this.micGain) this.micGain.gain.value = muted ? 0 : 1;
+  }
+
+  stop(): void {
+    this.sources.forEach((s) => s.disconnect());
+    void this.ctx.close().catch(() => undefined);
+  }
+}
+
 export class MultiTrackRecorder {
   private recordingId: string | null = null;
   private tracks: TrackRecorder[] = [];
   private micRecorder: TrackRecorder | null = null;
   private audioSwappers: ResilientAudioStream[] = [];
+  private croppedScreens: CroppedScreenStream[] = [];
+  private mixer: AudioMixer | null = null;
+  // Recorded-elapsed clock. The manifest's segment offsets are cumulative
+  // RECORDED time, so its pause/resume/stop timestamps must be on that same
+  // scale — `performance.now()` is time since the page loaded, which in a
+  // durable file that outlives the session means nothing at all.
+  private startedAtMs = 0;
+  private pausedAtMs = 0;
+  private pausedAccumMs = 0;
   private perTrack = new Map<string, number>();
 
   constructor(private readonly callbacks: RecorderCallbacks) {}
@@ -357,17 +452,36 @@ export class MultiTrackRecorder {
     configs: TrackConfig[],
     targetFps: number,
     providedStreams?: Record<string, MediaStream>,
+    options?: RecorderOptions,
   ): Promise<void> {
     const enabled = configs.filter((c) => c.enabled);
     if (enabled.length === 0) throw new Error('Enable at least one track to record');
 
-    const { recordingId } = await window.novarec.startRecording({ tracks: enabled });
+    const singleFile = options?.singleFile === true;
+    // In single-file mode main is told about ONE track, so it creates one
+    // folder whose finalized file already IS the finished recording.
+    const manifestTracks: TrackConfig[] = singleFile
+      ? [
+          {
+            id: SINGLE_TRACK_ID,
+            kind: 'screen',
+            label: 'Recording',
+            enabled: true,
+            gain: 1,
+            monitor: false,
+          },
+        ]
+      : enabled;
+    const { recordingId } = await window.novarec.startRecording({ tracks: manifestTracks });
     this.recordingId = recordingId;
+    this.startedAtMs = performance.now();
+    this.pausedAccumMs = 0;
     const screenSourceId = enabled.find((c) => c.kind === 'screen')?.sourceId ?? null;
 
     // Acquire each track independently — a failure (e.g. system-audio loopback
     // unavailable) skips that track instead of breaking the whole recording.
     // A caller (Studio) can inject an already-acquired stream by track id.
+    const acquired: { config: TrackConfig; stream: MediaStream }[] = [];
     for (const config of enabled) {
       try {
         let stream: MediaStream;
@@ -378,60 +492,138 @@ export class MultiTrackRecorder {
           await swapper.start();
           this.audioSwappers.push(swapper);
           stream = swapper.stream;
+        } else if (
+          config.kind === 'screen' &&
+          options?.screenRegion &&
+          !providedStreams?.[config.id]
+        ) {
+          // Region capture: record only the picked rect. `getDisplayMedia` can
+          // only hand back a whole display, so the crop is applied to the frames
+          // before they reach the encoder.
+          const raw = await acquireStream(config, targetFps, screenSourceId, options.screenRegion);
+          const cropped = await CroppedScreenStream.create(raw, options.screenRegion, targetFps);
+          if (cropped) {
+            this.croppedScreens.push(cropped);
+            stream = cropped.stream;
+          } else {
+            stream = raw; // region covers the whole display — nothing to crop
+          }
         } else {
           stream =
             providedStreams?.[config.id] ??
             (await acquireStream(config, targetFps, screenSourceId));
         }
-        const recorder = new TrackRecorder(
-          recordingId,
-          config.id,
-          config.label,
-          stream,
-          this.callbacks.onError,
-          (count) => {
-            this.perTrack.set(config.id, count);
-            this.callbacks.onSegmentCount([...this.perTrack.values()].reduce((a, b) => a + b, 0));
-          },
-        );
-        recorder.start();
-        this.tracks.push(recorder);
-        if (config.kind === 'microphone') this.micRecorder = recorder;
+        acquired.push({ config, stream });
       } catch (error) {
         const reason = error instanceof Error ? error.message : 'unknown error';
         this.callbacks.onError(`Couldn't start ${config.label}: ${reason}`);
       }
     }
 
+    if (singleFile) {
+      this.startSingleFile(recordingId, acquired);
+    } else {
+      for (const { config, stream } of acquired) {
+        const recorder = this.createTrackRecorder(recordingId, config.id, config.label, stream);
+        recorder.start();
+        this.tracks.push(recorder);
+        if (config.kind === 'microphone') this.micRecorder = recorder;
+      }
+    }
+
     if (this.tracks.length === 0) {
       this.audioSwappers.forEach((s) => s.stop());
       this.audioSwappers = [];
-      await window.novarec.stopRecording({ recordingId, atMs: performance.now() });
+      this.croppedScreens.forEach((c) => c.stop());
+      this.croppedScreens = [];
+      await window.novarec.stopRecording({ recordingId, atMs: this.elapsedMs() });
       this.recordingId = null;
       throw new Error('No tracks could be started — check permissions and try again');
     }
   }
 
+  private createTrackRecorder(
+    recordingId: string,
+    trackId: string,
+    label: string,
+    stream: MediaStream,
+  ): TrackRecorder {
+    return new TrackRecorder(
+      recordingId,
+      trackId,
+      label,
+      stream,
+      this.callbacks.onError,
+      (count) => {
+        this.perTrack.set(trackId, count);
+        this.callbacks.onSegmentCount([...this.perTrack.values()].reduce((a, b) => a + b, 0));
+      },
+    );
+  }
+
+  /**
+   * Combine everything acquired into one video+audio stream and record that.
+   * MediaRecorder then writes a single file carrying both, so what lands on
+   * disk is already the finished recording.
+   */
+  private startSingleFile(
+    recordingId: string,
+    acquired: { config: TrackConfig; stream: MediaStream }[],
+  ): void {
+    const video = acquired.flatMap((a) => a.stream.getVideoTracks()).slice(0, 1);
+    const mixer = new AudioMixer();
+    this.mixer = mixer;
+    for (const { config, stream } of acquired) {
+      mixer.add(stream, config.kind === 'microphone');
+    }
+    void mixer.resume();
+
+    const audio = mixer.track();
+    const merged = new MediaStream([...video, ...(audio ? [audio] : [])]);
+    if (merged.getTracks().length === 0) return; // nothing acquired; caller reports it
+
+    const recorder = this.createTrackRecorder(recordingId, SINGLE_TRACK_ID, 'Recording', merged);
+    recorder.start();
+    this.tracks.push(recorder);
+  }
+
+  /** The live recording's id, or null when nothing is being recorded. */
+  get id(): string | null {
+    return this.recordingId;
+  }
+
   /** Mute or unmute the microphone track mid-recording (no-op if none). */
   setMicMuted(muted: boolean): void {
-    this.micRecorder?.setStreamEnabled(!muted);
+    // Single-file mode has no separate mic track to toggle — the mic is summed
+    // into the one audio track, so muting happens at its gain node instead.
+    if (this.mixer) this.mixer.setMicMuted(muted);
+    else this.micRecorder?.setStreamEnabled(!muted);
+  }
+
+  /** Milliseconds of actual recorded footage so far (pauses excluded). */
+  private elapsedMs(): number {
+    if (this.startedAtMs === 0) return 0;
+    return Math.max(0, performance.now() - this.startedAtMs - this.pausedAccumMs);
   }
 
   async pause(): Promise<void> {
     this.tracks.forEach((t) => t.pause());
+    const atMs = this.elapsedMs();
+    this.pausedAtMs = performance.now();
     if (this.recordingId) {
-      await window.novarec.pauseRecording({
-        recordingId: this.recordingId,
-        atMs: performance.now(),
-      });
+      await window.novarec.pauseRecording({ recordingId: this.recordingId, atMs });
     }
   }
 
   async resume(): Promise<void> {
+    if (this.pausedAtMs > 0) {
+      this.pausedAccumMs += performance.now() - this.pausedAtMs;
+      this.pausedAtMs = 0;
+    }
     if (this.recordingId) {
       await window.novarec.resumeRecording({
         recordingId: this.recordingId,
-        atMs: performance.now(),
+        atMs: this.elapsedMs(),
       });
     }
     this.tracks.forEach((t) => t.resume());
@@ -443,15 +635,23 @@ export class MultiTrackRecorder {
     if (this.recordingId) {
       const summary = await window.novarec.stopRecording({
         recordingId: this.recordingId,
-        atMs: performance.now(),
+        atMs: this.elapsedMs(),
       });
       result = { dir: summary.dir };
     }
     this.audioSwappers.forEach((s) => s.stop());
     this.audioSwappers = [];
+    // Tear down the crop pump and its underlying full-screen capture.
+    this.croppedScreens.forEach((c) => c.stop());
+    this.croppedScreens = [];
+    this.mixer?.stop();
+    this.mixer = null;
     this.tracks = [];
     this.micRecorder = null;
     this.recordingId = null;
+    this.startedAtMs = 0;
+    this.pausedAtMs = 0;
+    this.pausedAccumMs = 0;
     this.perTrack.clear();
     return result;
   }

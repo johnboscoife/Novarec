@@ -165,3 +165,93 @@ export function snapRectEdges(
     height: Math.max(0, bottom - top),
   };
 }
+
+/**
+ * A crop to apply to a captured video frame so only the selected region is
+ * recorded: the source rect to read (in captured-frame pixels) and the encoded
+ * output size.
+ */
+export interface RegionCrop {
+  /** Source rect inside the captured frame, in that frame's pixels. */
+  sx: number;
+  sy: number;
+  sw: number;
+  sh: number;
+  /** Encoded output size — even numbers (H.264 requires even dimensions). */
+  outWidth: number;
+  outHeight: number;
+}
+
+/** Round down to an even number, with a floor of 2 (H.264 needs even dims). */
+function toEven(value: number): number {
+  return Math.max(2, Math.floor(value / 2) * 2);
+}
+
+/**
+ * Map a DIP region on a display to a crop within the frames actually delivered
+ * by `getDisplayMedia` for that display.
+ *
+ * The frame is the whole display, possibly downscaled by Chromium (we cap
+ * capture resolution), so the mapping is a pure ratio of frame pixels to the
+ * display's DIP bounds — never the display's own scale factor, which does not
+ * survive that downscale.
+ *
+ * Returns null when there is nothing to crop: no overlap with the captured
+ * display, a degenerate rect, or a region that already covers the whole frame
+ * (cropping then would only cost a canvas pass). A null result means "record the
+ * source as-is", never "silently record the wrong thing".
+ */
+export function cropForRegion(
+  region: Rect,
+  displayBounds: Rect,
+  videoWidth: number,
+  videoHeight: number,
+  maxOutWidth = 1920,
+  maxOutHeight = 1080,
+): RegionCrop | null {
+  if (videoWidth <= 0 || videoHeight <= 0) return null;
+  if (displayBounds.width <= 0 || displayBounds.height <= 0) return null;
+
+  const visible = rectIntersection(region, displayBounds);
+  if (!visible) return null;
+
+  const scaleX = videoWidth / displayBounds.width;
+  const scaleY = videoHeight / displayBounds.height;
+
+  const left = clamp(Math.round((visible.x - displayBounds.x) * scaleX), 0, videoWidth);
+  const top = clamp(Math.round((visible.y - displayBounds.y) * scaleY), 0, videoHeight);
+  const sw = clamp(Math.round(visible.width * scaleX), 0, videoWidth - left);
+  const sh = clamp(Math.round(visible.height * scaleY), 0, videoHeight - top);
+  if (sw < 2 || sh < 2) return null;
+
+  // Already the whole frame (within a rounding pixel) — nothing to crop.
+  if (sw >= videoWidth - 1 && sh >= videoHeight - 1) return null;
+
+  // Downscale only if the region is larger than the output ceiling; a small
+  // region keeps its native pixels instead of being upscaled.
+  const fit = Math.min(1, maxOutWidth / sw, maxOutHeight / sh);
+  return {
+    sx: left,
+    sy: top,
+    sw,
+    sh,
+    outWidth: toEven(sw * fit),
+    outHeight: toEven(sh * fit),
+  };
+}
+
+/**
+ * Convert a rect measured inside a per-display overlay into virtual-desktop DIP
+ * coordinates. The overlay covers exactly one display, so its CSS pixels are
+ * that display's DIP and the conversion is a pure translation by the display
+ * origin — no scale factor is involved (the frame the user drew on is already
+ * in DIP, whatever the monitor's DPI).
+ */
+export function overlayRectToVirtual(localRect: Rect, displayBounds: Rect): Rect {
+  return {
+    x: displayBounds.x + localRect.x,
+    y: displayBounds.y + localRect.y,
+    width: localRect.width,
+    height: localRect.height,
+  };
+}

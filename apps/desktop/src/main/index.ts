@@ -14,6 +14,7 @@ import {
 } from './app-state.js';
 import { loadAppSettings, saveAppSettings } from './app-settings-store.js';
 import { initAutoUpdate } from './auto-update.js';
+import { stopPhoneSession } from './phone/server.js';
 
 const isDev = !app.isPackaged;
 
@@ -206,11 +207,14 @@ app.on('child-process-gone', (_event, details) => {
 app.on('before-quit', () => {
   isQuitting = true; // don't re-prompt when quitting programmatically
   closeOverlays();
+  void stopPhoneSession();
 });
 
 app.on('will-quit', () => {
   unregisterHotkeys();
   closeOverlays();
+  // Never leave a LAN listening socket behind after the app is gone.
+  void stopPhoneSession();
 });
 
 app.on('window-all-closed', () => {

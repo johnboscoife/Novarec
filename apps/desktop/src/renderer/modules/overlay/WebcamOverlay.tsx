@@ -17,6 +17,8 @@ export function WebcamOverlay(): ReactElement {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [shape, setShape] = useState<WebcamShape>('circle');
   const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [mirror, setMirror] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Make the window chrome fully transparent so only the shaped video shows.
@@ -32,9 +34,15 @@ export function WebcamOverlay(): ReactElement {
     if (s === 'circle' || s === 'rounded' || s === 'square') setShape(s);
     const d = params.get('deviceId');
     if (d) setDeviceId(d);
+    const z = Number(params.get('zoom'));
+    if (Number.isFinite(z) && z >= 1) setZoom(z);
+    const m = params.get('mirror');
+    if (m !== null) setMirror(m !== '0');
     return window.novarec.onWebcamConfig((config) => {
       setShape(config.shape);
       setDeviceId(config.deviceId);
+      setZoom(config.zoom);
+      setMirror(config.mirror);
     });
   }, []);
 
@@ -108,7 +116,11 @@ export function WebcamOverlay(): ReactElement {
     // Clip the video itself — a transformed <video> escapes the parent's
     // border-radius clip in Chromium, so the shape must live on the video too.
     borderRadius: radius,
-    transform: 'scaleX(-1)', // mirror, like every webcam preview
+    // Mirroring is a negative X scale, so it multiplies into the zoom rather
+    // than composing as a separate transform. Zoom crops from the centre, which
+    // is exactly where a pillarboxed camera hides its real picture.
+    transform: `scale(${String(mirror ? -zoom : zoom)}, ${String(zoom)})`,
+    transformOrigin: 'center',
   };
 
   return (

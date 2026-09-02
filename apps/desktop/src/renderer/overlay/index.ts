@@ -1,15 +1,25 @@
 import './overlay.css';
-import { clampRectToBounds, displayForRect, snapRectEdges } from '@novarec/capture';
+import { clampRectToBounds, snapRectEdges } from '@novarec/capture';
 import type { DisplayInfo, Rect } from '@novarec/shared';
 
+/**
+ * The region-selection overlay, one instance per display.
+ *
+ * Because this window covers exactly one monitor, 1 CSS pixel here is exactly
+ * 1 DIP of that monitor: pointer coordinates need no scaling, and the rect is
+ * reported local to the display. Main adds the display origin. (The previous
+ * single window spanning the virtual desktop could not do this — Windows clamped
+ * it to one screen, and a straddling window's CSS pixels stop matching DIP.)
+ */
 interface OverlayInit {
-  displays: DisplayInfo[];
-  virtualBounds: Rect;
+  display: DisplayInfo;
 }
 
 interface OverlayApi {
   onInit(callback: (data: OverlayInit) => void): void;
-  confirm(rect: Rect): void;
+  onClear(callback: () => void): void;
+  begin(): void;
+  confirm(displayId: number, rect: Rect): void;
   cancel(): void;
 }
 
@@ -40,33 +50,44 @@ cancelBtn.textContent = 'Cancel';
 toolbar.append(confirmBtn, cancelBtn);
 root.append(backdrop, selection, dims, hint, toolbar);
 
-let virtualBounds: Rect = { x: 0, y: 0, width: 0, height: 0 };
-let displays: DisplayInfo[] = [];
-let xGuides: number[] = [];
-let yGuides: number[] = [];
+let display: DisplayInfo | null = null;
 let dragging = false;
 let anchor = { x: 0, y: 0 };
 let current: Rect | null = null;
 
 window.overlay.onInit((data) => {
-  virtualBounds = data.virtualBounds;
-  displays = data.displays;
-  // Snap guides in overlay-local coordinates (window origin = virtualBounds).
-  xGuides = displays.flatMap((d) => [
-    d.bounds.x - virtualBounds.x,
-    d.bounds.x - virtualBounds.x + d.bounds.width,
-  ]);
-  yGuides = displays.flatMap((d) => [
-    d.bounds.y - virtualBounds.y,
-    d.bounds.y - virtualBounds.y + d.bounds.height,
-  ]);
+  display = data.display;
+  // Name the monitor while more than one overlay is up, so it's obvious which
+  // screen a selection will come from.
+  hint.textContent = display.label
+    ? `${display.label} · Drag to select · Enter to confirm · Esc to cancel`
+    : 'Drag to select · Enter to confirm · Esc to cancel';
 });
+
+// A drag started on another display's overlay: this one is no longer the
+// selection, so drop it.
+window.overlay.onClear(() => {
+  dragging = false;
+  current = null;
+  toolbar.style.display = 'none';
+  render();
+});
+
+/**
+ * The drawable area, in CSS pixels. This is the source of truth for clamping —
+ * never the display bounds — so a selection can never extend past what the user
+ * was actually shown, even if the window ended up smaller than its monitor.
+ */
+function viewport(): Rect {
+  return { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
+}
 
 backdrop.addEventListener('pointerdown', (e) => {
   dragging = true;
   anchor = { x: e.clientX, y: e.clientY };
   current = { x: anchor.x, y: anchor.y, width: 0, height: 0 };
   toolbar.style.display = 'none';
+  window.overlay.begin();
   render();
 });
 
@@ -78,13 +99,10 @@ window.addEventListener('pointermove', (e) => {
     width: Math.abs(e.clientX - anchor.x),
     height: Math.abs(e.clientY - anchor.y),
   };
-  const bounded = clampRectToBounds(raw, {
-    x: 0,
-    y: 0,
-    width: virtualBounds.width,
-    height: virtualBounds.height,
-  });
-  current = snapRectEdges(bounded, xGuides, yGuides, SNAP_THRESHOLD);
+  const view = viewport();
+  const bounded = clampRectToBounds(raw, view);
+  // Snap to this display's own edges only — the guides are the viewport edges.
+  current = snapRectEdges(bounded, [0, view.width], [0, view.height], SNAP_THRESHOLD);
   render();
 });
 
@@ -107,14 +125,10 @@ confirmBtn.addEventListener('click', confirmSelection);
 cancelBtn.addEventListener('click', () => window.overlay.cancel());
 
 function confirmSelection(): void {
-  if (!current || current.width < MIN_SIZE || current.height < MIN_SIZE) return;
-  // Local overlay coords -> virtual-desktop DIP coords.
-  window.overlay.confirm({
-    x: virtualBounds.x + current.x,
-    y: virtualBounds.y + current.y,
-    width: current.width,
-    height: current.height,
-  });
+  if (!display || !current) return;
+  if (current.width < MIN_SIZE || current.height < MIN_SIZE) return;
+  // Local CSS pixels == this display's DIP; main adds the display origin.
+  window.overlay.confirm(display.id, current);
 }
 
 function render(): void {
@@ -130,10 +144,8 @@ function render(): void {
   selection.style.width = `${width}px`;
   selection.style.height = `${height}px`;
 
-  // Dimensions label: DIP size plus the physical-pixel size on the owning display.
-  const virtualRect: Rect = { x: virtualBounds.x + x, y: virtualBounds.y + y, width, height };
-  const owner = displayForRect(displays, virtualRect);
-  const scale = owner ? owner.scaleFactor : 1;
+  // Dimensions label: DIP size plus the physical-pixel size on this display.
+  const scale = display ? display.scaleFactor : 1;
   dims.textContent = `${Math.round(width)} × ${Math.round(height)}  ·  ${Math.round(
     width * scale,
   )} × ${Math.round(height * scale)} px`;
@@ -144,9 +156,10 @@ function render(): void {
 
 function showToolbar(): void {
   if (!current) return;
+  const view = viewport();
   toolbar.style.display = 'flex';
-  toolbar.style.left = `${current.x}px`;
-  toolbar.style.top = `${Math.min(virtualBounds.height - 34, current.y + current.height + 8)}px`;
+  toolbar.style.left = `${Math.min(current.x, Math.max(0, view.width - 150))}px`;
+  toolbar.style.top = `${Math.min(view.height - 34, current.y + current.height + 8)}px`;
 }
 
 function el(tag: string, id: string): HTMLElement {
