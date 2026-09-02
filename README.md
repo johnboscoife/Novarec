@@ -5,7 +5,7 @@ compositor, one media pipeline — powering three things people usually need thr
 apps for:
 
 - **Record** — a professional screen recorder (multi-track, region capture,
-  cursor zoom, crash-proof recording, one-click export).
+  crash-proof recording, straight to MP4 or MKV with no export step).
 - **Meet** — multi-party video meetings with per-participant recording and
   transcripts (LiveKit-backed).
 - **Studio** — a scene-based live compositor and streaming engine (OBS class).
@@ -24,7 +24,8 @@ Every correctness-critical guarantee is enforced by tests (128+):
 
 - **Never lose a recording** — append-only manifest, fsync-on-seal segments, and
   crash recovery proved by a real killed-subprocess test.
-- **Tracks stay separate until export** — independent per-track writers.
+- **Nothing is silently dropped** — a take records to one finished file by
+  default; choosing separate tracks keeps every source in its own writer.
 - **Privacy by default** — no telemetry leaves the device unless you opt in;
   recording indicator can't be disabled; meeting recording requires consent.
 

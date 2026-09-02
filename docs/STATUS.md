@@ -47,6 +47,22 @@ is cropped at the source, so finalize and export need no knowledge of regions.
 An area that does not overlap the captured display is an error, never a silent
 full-screen recording.
 
+## How a recording finishes
+
+By default a take is captured as ONE already-muxed file: the screen (with the
+camera composited picture-in-picture when there is one) and every audio source
+mixed at capture time. Stopping re-wraps that file into MP4 or MKV with a stream
+copy — disk speed, no re-encode, no queue. MP4 additionally converts the audio,
+because Chromium can record Opus, which is legal in MP4 but rejected by
+QuickTime and most editors; the video is never re-encoded either way.
+
+Separate-track recording remains available and unchanged for takes that need
+the audio balanced afterwards. It still requires a real export, which is where
+compositing and transcoding live.
+
+The durable segment/manifest layer sits underneath both modes, so crash recovery
+is identical either way.
+
 ## Markers and chapters
 
 Pressing the marker shortcut (or **Mark**) during a take appends to

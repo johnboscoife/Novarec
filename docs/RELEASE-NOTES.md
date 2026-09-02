@@ -1,5 +1,34 @@
 # Release notes
 
+## 0.0.46 — two ways single-file recording lost your audio and video
+
+Both found by auditing 0.0.45 rather than by hitting them, and both are the
+same shape: something recorded fine and then quietly wasn't in the file.
+
+### A camera was dropped from single-file recordings
+
+One file carries one video track. With both a screen and a phone camera
+running, 0.0.45 took the first video track and discarded the rest — so the
+camera showed a live preview, reported itself as recording, and was simply
+absent from the result.
+
+Screen and camera are now composited as they are captured, camera
+picture-in-picture, matching the layout the export already used for
+separate-track takes — so a recording looks the same whichever mode made it. If
+compositing fails, the screen is still recorded and the failure is reported,
+rather than a take quietly arriving without the camera in it.
+
+### A stream copy dropped an audio source
+
+Exporting a separate-track recording with one of the no-re-encode presets kept
+only one audio stream. FFmpeg's default stream selection takes one stream of
+each kind, and a copy cannot mix — mixing is processing. So a screen +
+microphone + system audio take came out missing an audio source, silently.
+
+Every input is now mapped explicitly, so all of them land in the file as
+separate tracks. Verified against FFmpeg: three streams out where there were
+two before.
+
 ## 0.0.45 — records straight to MP4 or MKV
 
 Stop the recording and the file is there. No export step, no queue, no waiting

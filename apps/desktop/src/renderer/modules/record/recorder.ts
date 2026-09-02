@@ -1,5 +1,6 @@
 import type { TrackConfig } from '@novarec/shared';
 import { CroppedScreenStream, type RegionSpec } from './cropStream.js';
+import { CompositedVideoStream } from './compositeStream.js';
 
 /**
  * Multi-track recording from the renderer. Each enabled track (screen, camera,
@@ -437,6 +438,7 @@ export class MultiTrackRecorder {
   private audioSwappers: ResilientAudioStream[] = [];
   private croppedScreens: CroppedScreenStream[] = [];
   private mixer: AudioMixer | null = null;
+  private composited: CompositedVideoStream | null = null;
   // Recorded-elapsed clock. The manifest's segment offsets are cumulative
   // RECORDED time, so its pause/resume/stop timestamps must be on that same
   // scale — `performance.now()` is time since the page loaded, which in a
@@ -521,7 +523,7 @@ export class MultiTrackRecorder {
     }
 
     if (singleFile) {
-      this.startSingleFile(recordingId, acquired);
+      await this.startSingleFile(recordingId, acquired, targetFps);
     } else {
       for (const { config, stream } of acquired) {
         const recorder = this.createTrackRecorder(recordingId, config.id, config.label, stream);
@@ -536,6 +538,10 @@ export class MultiTrackRecorder {
       this.audioSwappers = [];
       this.croppedScreens.forEach((c) => c.stop());
       this.croppedScreens = [];
+      this.mixer?.stop();
+      this.mixer = null;
+      this.composited?.stop();
+      this.composited = null;
       await window.novarec.stopRecording({ recordingId, atMs: this.elapsedMs() });
       this.recordingId = null;
       throw new Error('No tracks could be started — check permissions and try again');
@@ -566,11 +572,40 @@ export class MultiTrackRecorder {
    * MediaRecorder then writes a single file carrying both, so what lands on
    * disk is already the finished recording.
    */
-  private startSingleFile(
+  private async startSingleFile(
     recordingId: string,
     acquired: { config: TrackConfig; stream: MediaStream }[],
-  ): void {
-    const video = acquired.flatMap((a) => a.stream.getVideoTracks()).slice(0, 1);
+    targetFps: number,
+  ): Promise<void> {
+    const withVideo = acquired.filter((a) => a.stream.getVideoTracks().length > 0);
+    let video: MediaStreamTrack[] = [];
+    if (withVideo.length === 1) {
+      video = withVideo[0]!.stream.getVideoTracks().slice(0, 1);
+    } else if (withVideo.length > 1) {
+      // One file carries one video track, so a screen AND a camera have to be
+      // composited — taking the first and discarding the rest would record a
+      // camera that isn't in the file.
+      const base = withVideo.find((a) => a.config.kind === 'screen') ?? withVideo[0]!;
+      const overlay = withVideo.find((a) => a !== base)!;
+      try {
+        const composited = await CompositedVideoStream.create(
+          base.stream,
+          overlay.stream,
+          targetFps,
+        );
+        this.composited = composited;
+        video = composited.stream.getVideoTracks();
+      } catch (error) {
+        // Compositing failed: record the screen rather than nothing, and say so
+        // instead of quietly producing a take without the camera in it.
+        const reason = error instanceof Error ? error.message : 'unknown error';
+        this.callbacks.onError(
+          `Couldn't overlay the camera (${reason}) — recording the screen only.`,
+        );
+        video = base.stream.getVideoTracks().slice(0, 1);
+      }
+    }
+
     const mixer = new AudioMixer();
     this.mixer = mixer;
     for (const { config, stream } of acquired) {
@@ -646,6 +681,8 @@ export class MultiTrackRecorder {
     this.croppedScreens = [];
     this.mixer?.stop();
     this.mixer = null;
+    this.composited?.stop();
+    this.composited = null;
     this.tracks = [];
     this.micRecorder = null;
     this.recordingId = null;

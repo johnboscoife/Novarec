@@ -141,6 +141,14 @@ export function buildFfmpegArgs(
   }
 
   args.push(...audioCodecArgs(settings));
+  // A stream copy cannot MIX audio — mixing is processing. With several track
+  // files, FFmpeg's default selection would silently keep one audio stream and
+  // discard the rest, so map every input explicitly and let them all land in the
+  // container as separate tracks. Losing a microphone without saying so is worse
+  // than a file with two audio tracks in it.
+  if (settings.videoCodec === 'copy' && inputs.length > 1) {
+    inputs.forEach((_input, index) => args.push('-map', String(index)));
+  }
   args.push(...faststartArgs(settings));
   if (chapters) args.push('-map_metadata', String(inputs.length));
   args.push(outputPath);

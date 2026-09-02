@@ -65,6 +65,24 @@ describe('buildFfmpegArgs', () => {
       expect(flagValue(args, '-c:a')).toBe('copy');
     });
 
+    it('keeps every track when copying several files, rather than dropping audio', () => {
+      // FFmpeg's default selection takes ONE stream of each kind, so a
+      // screen + mic + system-audio copy would silently lose an audio source.
+      const multi = [
+        { path: 'screen.mp4', role: 'screen' as const },
+        { path: 'mic.mp4', role: 'audio' as const },
+        { path: 'sys.mp4', role: 'audio' as const },
+      ];
+      const args = buildFfmpegArgs(preset('mkv-original'), multi, 'out.mkv');
+      const maps = args.filter((a, i) => args[i - 1] === '-map');
+      expect(maps).toEqual(['0', '1', '2']);
+    });
+
+    it('does not add explicit maps for a single-file recording', () => {
+      const args = buildFfmpegArgs(preset('mp4-original'), inputs, 'out.mp4');
+      expect(args).not.toContain('-map');
+    });
+
     it('never composites — a filter graph would re-encode by definition', () => {
       const multi = [
         { path: 'screen.mp4', role: 'screen' as const },
