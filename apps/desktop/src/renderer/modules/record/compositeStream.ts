@@ -59,14 +59,16 @@ export class CompositedVideoStream {
   private stopped = false;
 
   private constructor(
-    private readonly sources: MediaStream[],
     private readonly videos: HTMLVideoElement[],
     readonly stream: MediaStream,
   ) {}
 
   /**
-   * Draw `base` full-frame with `overlay` in the corner. Both streams are taken
-   * over by this object and released by `stop()`.
+   * Draw `base` full-frame with `overlay` in the corner.
+   *
+   * The source streams are BORROWED, not owned: the recorder opened them and
+   * closes them. Closing a borrowed stream here would kill a paired phone's
+   * camera the first time a recording stopped.
    */
   static async create(
     base: MediaStream,
@@ -79,10 +81,9 @@ export class CompositedVideoStream {
       await waitForFrameSize(baseVideo);
       await waitForFrameSize(overlayVideo);
     } catch (error) {
+      // Leave the sources alone — the caller still needs them to fall back to.
       baseVideo.remove();
       overlayVideo.remove();
-      base.getTracks().forEach((t) => t.stop());
-      overlay.getTracks().forEach((t) => t.stop());
       throw error;
     }
 
@@ -98,7 +99,6 @@ export class CompositedVideoStream {
     }
 
     const composited = new CompositedVideoStream(
-      [base, overlay],
       [baseVideo, overlayVideo],
       canvas.captureStream(fps),
     );
@@ -151,8 +151,8 @@ export class CompositedVideoStream {
       window.clearInterval(this.timer);
       this.timer = null;
     }
+    // Only the canvas stream is ours; the sources belong to the recorder.
     this.stream.getTracks().forEach((t) => t.stop());
-    this.sources.forEach((s) => s.getTracks().forEach((t) => t.stop()));
     this.videos.forEach((v) => {
       v.pause();
       v.srcObject = null;

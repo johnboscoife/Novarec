@@ -1,5 +1,45 @@
 # Release notes
 
+## 0.0.47 — the floating camera stops opening the wrong one, and stops spinning
+
+Two faults in the floating camera window, both showing up with Windows' phone
+"connected camera", which registers and unregisters as the phone comes and goes.
+
+### It opened a different camera than the one you chose
+
+If the selected camera could not be opened, the window quietly fell back to
+"whatever is the default camera" and floated that on screen — while the picker
+still named the camera you asked for. In a window that is recorded into your
+video, that can put an entirely different room on camera without a word.
+
+It no longer substitutes. If the chosen camera cannot open, the window says so,
+naming what went wrong — in use by another app, unavailable, or blocked.
+
+### It retried forever instead of settling
+
+When a camera's track ended, the window re-acquired it immediately, with no
+delay and no limit. A camera that drops in and out — exactly what a phone-backed
+virtual camera does — sent that into a tight loop that never settled, which is
+what "it just keeps rolling" was.
+
+Retries now back off (half a second, doubling, capped) and give up after six
+attempts with an explanation rather than spinning.
+
+### And it tells you what it is doing
+
+A camera that is registered but not yet sending video reports itself as muted
+rather than failing, which previously looked like a frozen window. The overlay
+now shows "Waiting for the camera to send video…", and shows a real message
+while connecting or after a failure, instead of a blank square.
+
+### Devices are released properly
+
+Single-file recording never closed the sources it opened — the system-audio
+loopback especially — so they stayed held after a take. And a borrowed stream (a
+paired phone's camera) was being stopped by the recorder, killing a device it
+never opened. Ownership is now explicit: NovaRec closes exactly what it opened,
+and nothing it was lent.
+
 ## 0.0.46 — two ways single-file recording lost your audio and video
 
 Both found by auditing 0.0.45 rather than by hitting them, and both are the

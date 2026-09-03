@@ -7,6 +7,11 @@ import type { WebcamShape } from '@novarec/shared';
  * region so the user can move it anywhere on screen; the main process resizes it.
  * Corners outside the shape are transparent, so the recording sees the shape.
  */
+/** Backoff for a camera that keeps dropping, instead of a tight retry loop. */
+const BASE_BACKOFF_MS = 500;
+const MAX_BACKOFF_MS = 8000;
+const MAX_ATTEMPTS = 6;
+
 function radiusFor(shape: WebcamShape): string {
   if (shape === 'circle') return '50%';
   if (shape === 'rounded') return '18px';
@@ -19,7 +24,8 @@ export function WebcamOverlay(): ReactElement {
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [mirror, setMirror] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<'connecting' | 'live' | 'error'>('connecting');
+  const [message, setMessage] = useState<string | null>(null);
 
   // Make the window chrome fully transparent so only the shaped video shows.
   useEffect(() => {
@@ -46,53 +52,102 @@ export function WebcamOverlay(): ReactElement {
     });
   }, []);
 
-  // Acquire the camera, falling back to the default if the chosen one is gone,
-  // and hot-swap if it's unplugged while live.
+  // Open the CHOSEN camera, and keep it open across the device coming and
+  // going. Two rules matter here:
+  //
+  //  1. Never substitute a different camera. Falling back to "whatever is
+  //     default" when the chosen device won't open put an unrelated camera on
+  //     screen — and into the recording — while the picker still named the one
+  //     the user asked for.
+  //  2. Retry with backoff, not in a loop. Windows' phone "connected camera"
+  //     registers and unregisters as the phone connects, so its track ends
+  //     repeatedly; re-acquiring immediately on every `ended` spun forever and
+  //     never settled.
   useEffect(() => {
-    let current: MediaStream | null = null;
     let cancelled = false;
-    setError(null);
+    let current: MediaStream | null = null;
+    let attempt = 0;
+    let timer: number | null = null;
 
-    const getCamera = async (): Promise<MediaStream> => {
-      try {
-        return await navigator.mediaDevices.getUserMedia({
-          video: deviceId ? { deviceId: { exact: deviceId } } : true,
-          audio: false,
-        });
-      } catch (e) {
-        if (!deviceId) throw e;
-        return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    const clearTimer = (): void => {
+      if (timer !== null) {
+        window.clearTimeout(timer);
+        timer = null;
       }
+    };
+
+    const retryLater = (why: string): void => {
+      if (cancelled) return;
+      if (attempt >= MAX_ATTEMPTS) {
+        setStatus('error');
+        setMessage(`${why} Choose another camera, or reconnect this one.`);
+        return;
+      }
+      const waitMs = Math.min(MAX_BACKOFF_MS, BASE_BACKOFF_MS * 2 ** attempt);
+      attempt += 1;
+      setStatus('connecting');
+      setMessage(`${why} Retrying…`);
+      timer = window.setTimeout(() => void attach(), waitMs);
+    };
+
+    const describe = (error: unknown): string => {
+      const name = error instanceof DOMException ? error.name : '';
+      if (name === 'NotReadableError') return 'That camera is in use by another app.';
+      if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+        return 'That camera is not available right now.';
+      }
+      if (name === 'NotAllowedError') return 'Camera access was blocked.';
+      return 'That camera did not open.';
     };
 
     const attach = async (): Promise<void> => {
+      clearTimer();
       try {
-        const s = await getCamera();
+        const next = await navigator.mediaDevices.getUserMedia({
+          video: deviceId ? { deviceId: { exact: deviceId } } : true,
+          audio: false,
+        });
         if (cancelled) {
-          s.getTracks().forEach((t) => t.stop());
+          next.getTracks().forEach((t) => t.stop());
           return;
         }
         current?.getTracks().forEach((t) => t.stop());
-        current = s;
-        setError(null);
+        current = next;
+        attempt = 0;
+        setStatus('live');
+        setMessage(null);
+
         const el = videoRef.current;
         if (el) {
-          el.srcObject = s;
+          el.srcObject = next;
           void el.play().catch(() => undefined);
         }
-        s.getVideoTracks().forEach((t) => {
-          t.onended = () => {
-            if (!cancelled) void attach();
+
+        next.getVideoTracks().forEach((track) => {
+          track.onended = () => {
+            if (!cancelled) retryLater('The camera disconnected.');
+          };
+          // A registered-but-not-streaming virtual camera reports itself muted
+          // rather than failing, which otherwise looks like a frozen window.
+          track.onmute = () => {
+            if (!cancelled) setMessage('Waiting for the camera to send video…');
+          };
+          track.onunmute = () => {
+            if (!cancelled) setMessage(null);
           };
         });
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Camera unavailable');
+      } catch (error) {
+        if (cancelled) return;
+        retryLater(describe(error));
       }
     };
 
+    setStatus('connecting');
+    setMessage(null);
     void attach();
     return () => {
       cancelled = true;
+      clearTimer();
       current?.getTracks().forEach((t) => t.stop());
     };
   }, [deviceId]);
@@ -103,7 +158,7 @@ export function WebcamOverlay(): ReactElement {
     inset: 0,
     boxSizing: 'border-box',
     overflow: 'hidden',
-    background: error ? 'rgba(10,10,15,0.92)' : 'transparent',
+    background: status === 'live' ? 'transparent' : 'rgba(10,10,15,0.92)',
     border: '3px solid rgba(255,255,255,0.92)',
     borderRadius: radius,
     cursor: 'move',
@@ -125,22 +180,29 @@ export function WebcamOverlay(): ReactElement {
 
   return (
     <div className="wc-drag" style={container}>
-      {error ? (
+      <video
+        ref={videoRef}
+        muted
+        playsInline
+        autoPlay
+        style={{ ...video, visibility: status === 'live' ? 'visible' : 'hidden' }}
+      />
+      {status !== 'live' && (
         <div
           style={{
+            position: 'absolute',
+            inset: 0,
             display: 'grid',
             placeItems: 'center',
-            height: '100%',
-            padding: 12,
+            padding: 14,
             textAlign: 'center',
-            color: '#f87171',
+            color: status === 'error' ? '#f87171' : '#d4d4d4',
             font: '12px system-ui',
+            lineHeight: 1.5,
           }}
         >
-          {error}
+          {message ?? 'Starting camera…'}
         </div>
-      ) : (
-        <video ref={videoRef} muted playsInline autoPlay style={video} />
       )}
     </div>
   );

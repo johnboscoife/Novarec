@@ -159,6 +159,12 @@ class TrackRecorder {
     private readonly stream: MediaStream,
     private readonly onError: (message: string) => void,
     private readonly onSegment: (count: number) => void,
+    /**
+     * False when the stream came from the caller (a paired phone, a Studio
+     * scene). Stopping one of those kills a source this recorder never opened —
+     * the phone's preview dies and it has to be paired again.
+     */
+    private readonly ownsStream = true,
   ) {}
 
   start(): void {
@@ -313,7 +319,7 @@ class TrackRecorder {
       // sealed segments are already durable on disk.
       await Promise.race([this.queue, delay(QUEUE_FLUSH_TIMEOUT_MS)]);
     }
-    this.stream.getTracks().forEach((t) => t.stop());
+    if (this.ownsStream) this.stream.getTracks().forEach((t) => t.stop());
   }
 }
 
@@ -439,6 +445,12 @@ export class MultiTrackRecorder {
   private croppedScreens: CroppedScreenStream[] = [];
   private mixer: AudioMixer | null = null;
   private composited: CompositedVideoStream | null = null;
+  /**
+   * Streams this recorder OPENED and must therefore close. Anything handed in
+   * by the caller is deliberately absent: releasing a device we did not acquire
+   * is how a camera ends up dead after one take.
+   */
+  private ownedStreams: MediaStream[] = [];
   // Recorded-elapsed clock. The manifest's segment offsets are cumulative
   // RECORDED time, so its pause/resume/stop timestamps must be on that same
   // scale — `performance.now()` is time since the page loaded, which in a
@@ -483,7 +495,7 @@ export class MultiTrackRecorder {
     // Acquire each track independently — a failure (e.g. system-audio loopback
     // unavailable) skips that track instead of breaking the whole recording.
     // A caller (Studio) can inject an already-acquired stream by track id.
-    const acquired: { config: TrackConfig; stream: MediaStream }[] = [];
+    const acquired: { config: TrackConfig; stream: MediaStream; owned: boolean }[] = [];
     for (const config of enabled) {
       try {
         let stream: MediaStream;
@@ -515,7 +527,10 @@ export class MultiTrackRecorder {
             providedStreams?.[config.id] ??
             (await acquireStream(config, targetFps, screenSourceId));
         }
-        acquired.push({ config, stream });
+        // A stream the caller handed us stays theirs to close.
+        const owned = providedStreams?.[config.id] !== stream;
+        if (owned) this.ownedStreams.push(stream);
+        acquired.push({ config, stream, owned });
       } catch (error) {
         const reason = error instanceof Error ? error.message : 'unknown error';
         this.callbacks.onError(`Couldn't start ${config.label}: ${reason}`);
@@ -526,7 +541,15 @@ export class MultiTrackRecorder {
       await this.startSingleFile(recordingId, acquired, targetFps);
     } else {
       for (const { config, stream } of acquired) {
-        const recorder = this.createTrackRecorder(recordingId, config.id, config.label, stream);
+        // Ownership is handled centrally, so the per-track recorder never
+        // closes a device — it would double-stop, or kill a borrowed one.
+        const recorder = this.createTrackRecorder(
+          recordingId,
+          config.id,
+          config.label,
+          stream,
+          false,
+        );
         recorder.start();
         this.tracks.push(recorder);
         if (config.kind === 'microphone') this.micRecorder = recorder;
@@ -542,6 +565,7 @@ export class MultiTrackRecorder {
       this.mixer = null;
       this.composited?.stop();
       this.composited = null;
+      this.releaseOwnedStreams();
       await window.novarec.stopRecording({ recordingId, atMs: this.elapsedMs() });
       this.recordingId = null;
       throw new Error('No tracks could be started — check permissions and try again');
@@ -553,6 +577,7 @@ export class MultiTrackRecorder {
     trackId: string,
     label: string,
     stream: MediaStream,
+    ownsStream = true,
   ): TrackRecorder {
     return new TrackRecorder(
       recordingId,
@@ -564,7 +589,14 @@ export class MultiTrackRecorder {
         this.perTrack.set(trackId, count);
         this.callbacks.onSegmentCount([...this.perTrack.values()].reduce((a, b) => a + b, 0));
       },
+      ownsStream,
     );
+  }
+
+  /** Release every device this recorder opened. */
+  private releaseOwnedStreams(): void {
+    this.ownedStreams.forEach((stream) => stream.getTracks().forEach((t) => t.stop()));
+    this.ownedStreams = [];
   }
 
   /**
@@ -597,12 +629,17 @@ export class MultiTrackRecorder {
         video = composited.stream.getVideoTracks();
       } catch (error) {
         // Compositing failed: record the screen rather than nothing, and say so
-        // instead of quietly producing a take without the camera in it.
+        // instead of quietly producing a take without the camera in it. The
+        // source streams are untouched by a failed compositor, so the screen
+        // track here is still live.
         const reason = error instanceof Error ? error.message : 'unknown error';
         this.callbacks.onError(
           `Couldn't overlay the camera (${reason}) — recording the screen only.`,
         );
-        video = base.stream.getVideoTracks().slice(0, 1);
+        video = base.stream
+          .getVideoTracks()
+          .filter((t) => t.readyState === 'live')
+          .slice(0, 1);
       }
     }
 
@@ -617,7 +654,13 @@ export class MultiTrackRecorder {
     const merged = new MediaStream([...video, ...(audio ? [audio] : [])]);
     if (merged.getTracks().length === 0) return; // nothing acquired; caller reports it
 
-    const recorder = this.createTrackRecorder(recordingId, SINGLE_TRACK_ID, 'Recording', merged);
+    const recorder = this.createTrackRecorder(
+      recordingId,
+      SINGLE_TRACK_ID,
+      'Recording',
+      merged,
+      false,
+    );
     recorder.start();
     this.tracks.push(recorder);
   }
@@ -683,6 +726,9 @@ export class MultiTrackRecorder {
     this.mixer = null;
     this.composited?.stop();
     this.composited = null;
+    // Every device this recorder opened is closed here, so nothing is left
+    // held after a take — a camera stuck 'in use' is the classic symptom.
+    this.releaseOwnedStreams();
     this.tracks = [];
     this.micRecorder = null;
     this.recordingId = null;
