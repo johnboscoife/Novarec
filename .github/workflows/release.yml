@@ -1,9 +1,10 @@
 name: Release
 
-# Push a version tag (e.g. v0.0.32, matching apps/desktop/package.json) and this
+# Push a version tag (e.g. v0.0.46, matching apps/desktop/package.json) and this
 # builds the Windows installer and publishes it — plus the latest.yml update
-# metadata electron-updater needs — to a DRAFT GitHub Release. Review the draft,
-# then hit "Publish release" so installed apps auto-update to it on next launch.
+# metadata electron-updater needs — to a GitHub Release. `releaseType: release`
+# in electron-builder.yml means it goes live immediately; switch that to `draft`
+# if a review gate is wanted.
 #
 # Code signing is optional (unsigned builds show a SmartScreen warning on first
 # run). Add the CSC_* secrets below to sign.
@@ -46,9 +47,30 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      # A release that cannot start is worse than no release. Same guard as CI.
+      - name: Smoke test (launch the built app)
+        run: pnpm --filter @novarec/desktop build:dir && pnpm test:e2e
+
+      # electron-builder uploads its artifacts in PARALLEL, and every upload
+      # that finds no release for the tag tries to CREATE one. That race lost
+      # the installer once: two concurrent "creating GitHub release" attempts,
+      # one won, and the loser abandoned its upload — leaving a release with
+      # nothing in it but a .blockmap, and no latest.yml for auto-update.
+      # Creating the release up front means every upload finds it already there.
+      - name: Create the release up front
+        shell: bash
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 && exit 0
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes "Release notes: https://github.com/${GITHUB_REPOSITORY}/blob/master/docs/RELEASE-NOTES.md" \
+            --verify-tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build & publish to GitHub Releases
-        # electron-builder creates/updates a DRAFT release for this tag and
-        # uploads the .exe, its .blockmap, and latest.yml (the update feed).
+        # Uploads the .exe, its .blockmap, and latest.yml (the update feed) to
+        # the release created above.
         run: pnpm --filter @novarec/desktop release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
