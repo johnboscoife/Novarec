@@ -554,7 +554,14 @@ export class MultiTrackRecorder {
         // mapped into whatever the frame ended up being.
         if (config.kind === 'screen' && options?.cursorEffects) {
           try {
-            const effects = await CursorEffectsStream.create(stream, options.cursorEffects);
+            const effects = await CursorEffectsStream.create(stream, {
+              ...options.cursorEffects,
+              onEffectsFailed: () => {
+                this.callbacks.onError(
+                  'Cursor effects stopped responding — the recording continues without them.',
+                );
+              },
+            });
             this.cursorEffects = effects;
             this.ownedStreams.push(stream);
             stream = effects.stream;

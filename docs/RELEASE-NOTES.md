@@ -1,5 +1,37 @@
 # Release notes
 
+## 0.0.51 — fixes recordings freezing at the moment of zoom
+
+0.0.50's zoom could freeze the recording on the frame where you pressed it, for
+the rest of the take. Sorry — that one destroyed footage, which is the worst
+kind of bug this app can have.
+
+### What happened
+
+`drawImage` given a non-finite rectangle draws **nothing, and throws nothing**.
+The zoom geometry could produce one — and because the easing feeds each frame's
+output back in as the next frame's input, a single bad value poisoned every
+frame after it. The canvas stopped updating, and a canvas that stops updating is
+a video that stops moving.
+
+Three fixes, in order of how much they matter:
+
+- **The zoom geometry can no longer produce a non-finite rectangle.** Given
+  nonsense it returns the whole frame: losing the zoom is survivable, losing the
+  recording is not.
+- **The easing recovers.** A non-finite running value now snaps back to its
+  target on the next frame instead of poisoning the rest of the take.
+- **The draw loop cannot be stopped.** Every frame is wrapped, a degenerate view
+  falls back to the plain frame, and after repeated trouble the effects are
+  abandoned entirely and the untouched screen is recorded — with a message
+  saying so. The effects are decorative; the recording is not.
+
+### Also
+
+Pointer tracking now starts before the capture pipeline is built rather than
+after, so the first moments of a zoom aim at the cursor instead of the
+top-left corner.
+
 ## 0.0.50 — zoom to the cursor while recording, and cursor effects
 
 These controls did not exist. There was a tested zoom engine in the codebase

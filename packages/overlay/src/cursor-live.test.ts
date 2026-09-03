@@ -142,3 +142,60 @@ describe('pruneClicks', () => {
     expect(pruneClicks(clicks, 1000, 400)).toEqual([{ atMs: 900, x: 1, y: 1 }]);
   });
 });
+
+// Regression: a single non-finite value froze a recording. drawImage given a
+// non-finite rect draws nothing and throws nothing, so the canvas stopped
+// updating and the video stayed on its last frame for the rest of the take.
+describe('never produces a rect that would stop the canvas updating', () => {
+  const finiteRect = (r: { x: number; y: number; width: number; height: number }): boolean =>
+    Number.isFinite(r.x) &&
+    Number.isFinite(r.y) &&
+    Number.isFinite(r.width) &&
+    Number.isFinite(r.height);
+
+  it('falls back to the whole frame for a non-finite focus', () => {
+    expect(zoomedSourceRect(1920, 1080, { x: NaN, y: NaN }, 2)).toEqual({
+      x: 0,
+      y: 0,
+      width: 1920,
+      height: 1080,
+    });
+  });
+
+  it('falls back to the whole frame for a non-finite scale', () => {
+    expect(zoomedSourceRect(1920, 1080, { x: 100, y: 100 }, NaN)).toEqual({
+      x: 0,
+      y: 0,
+      width: 1920,
+      height: 1080,
+    });
+  });
+
+  it('stays finite for every hostile combination', () => {
+    const nasty = [NaN, Infinity, -Infinity, 0, -1];
+    for (const scale of nasty) {
+      for (const x of nasty) {
+        expect(finiteRect(zoomedSourceRect(1920, 1080, { x, y: 0 }, scale))).toBe(true);
+        expect(finiteRect(zoomedSourceRect(1920, 1080, { x: 0, y: x }, scale))).toBe(true);
+      }
+    }
+  });
+});
+
+describe('easeValue recovers from a poisoned value', () => {
+  // `current` is the previous frame's output, so without this a single NaN
+  // would make every subsequent frame NaN for the rest of the recording.
+  it('snaps to the target when the running value went non-finite', () => {
+    expect(easeValue(NaN, 100, 16, 100)).toBe(100);
+    expect(easeValue(Infinity, 42, 16, 100)).toBe(42);
+  });
+
+  it('returns a finite number even when the target is bad', () => {
+    expect(Number.isFinite(easeValue(10, NaN, 16, 100))).toBe(true);
+  });
+
+  it('a poisoned point recovers on both axes', () => {
+    const eased = easePoint({ x: NaN, y: NaN }, { x: 5, y: 6 }, 16, 100);
+    expect(eased).toEqual({ x: 5, y: 6 });
+  });
+});

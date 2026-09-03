@@ -28,6 +28,8 @@ export interface CursorEffectsOptions {
   /** Draw our own pointer, because the real one was left out of the capture. */
   drawCursor: boolean;
   smoothing: boolean;
+  /** Called once if the effects have to be abandoned mid-recording. */
+  onEffectsFailed?: () => void;
 }
 
 /** How quickly the zoom and the focus point catch up. */
@@ -56,6 +58,10 @@ export class CursorEffectsStream {
   private targetScale = 1;
   private clicks: ClickMark[] = [];
   private lastDrawAt = 0;
+  /** Effects are decorative; the recording is not. After repeated trouble the
+   * effects are abandoned and the plain frame is drawn instead. */
+  private failures = 0;
+  private effectsDisabled = false;
 
   private constructor(
     private readonly video: HTMLVideoElement,
@@ -142,13 +148,44 @@ export class CursorEffectsStream {
     this.timer = window.setInterval(() => this.draw(), periodMs);
   }
 
+  /**
+   * Draw one frame. Wrapped so that nothing here can stop the loop: this canvas
+   * IS the recording, and a decorative effect must never be able to freeze it.
+   */
   private draw(): void {
     if (this.stopped) return;
+    try {
+      this.drawFrame();
+      this.failures = 0;
+    } catch {
+      this.failures += 1;
+      if (this.failures >= 5 && !this.effectsDisabled) {
+        this.effectsDisabled = true;
+        this.options.onEffectsFailed?.();
+      }
+      this.drawPlainFrame();
+    }
+  }
+
+  /** Last resort: the untouched frame, so the recording keeps moving. */
+  private drawPlainFrame(): void {
+    try {
+      this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
+    } catch {
+      // Nothing further to try; the next tick will attempt again.
+    }
+  }
+
+  private drawFrame(): void {
     const now = performance.now();
     const dt = Math.max(1, now - this.lastDrawAt);
     this.lastDrawAt = now;
 
     const { ctx, canvas, options } = this;
+    if (this.effectsDisabled) {
+      this.drawPlainFrame();
+      return;
+    }
 
     this.easedScale = easeValue(this.easedScale, this.targetScale, dt, ZOOM_HALF_LIFE_MS);
     this.easedFocus = easePoint(this.easedFocus, this.rawCursor, dt, FOCUS_HALF_LIFE_MS);
@@ -157,6 +194,13 @@ export class CursorEffectsStream {
       : this.rawCursor;
 
     const view = zoomedSourceRect(canvas.width, canvas.height, this.easedFocus, this.easedScale);
+    // `drawImage` given a degenerate rect draws NOTHING and throws nothing, so
+    // the canvas would silently stop updating and freeze the recording. The
+    // geometry is total now; this is the second line of defence.
+    if (view.width <= 0 || view.height <= 0) {
+      this.drawPlainFrame();
+      return;
+    }
     ctx.drawImage(
       this.video,
       view.x,

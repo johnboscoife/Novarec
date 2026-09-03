@@ -25,6 +25,12 @@ export function easeValue(
   dtMs: number,
   halfLifeMs: number,
 ): number {
+  // Self-healing. Easing is a feedback loop — `current` is last frame's output —
+  // so a single non-finite value would otherwise poison every frame after it,
+  // forever. Snapping recovers on the next frame instead.
+  if (!Number.isFinite(current) || !Number.isFinite(target)) {
+    return Number.isFinite(target) ? target : 0;
+  }
   if (halfLifeMs <= 0 || dtMs <= 0) return target;
   const factor = 1 - Math.pow(0.5, dtMs / halfLifeMs);
   return current + (target - current) * factor;
@@ -51,6 +57,18 @@ export function zoomedSourceRect(
   focus: Point,
   scale: number,
 ): Rect {
+  // TOTAL by construction. `drawImage` given a non-finite rect draws NOTHING and
+  // throws nothing, so a single NaN reaching here stops the canvas updating —
+  // and a canvas that stops updating freezes the recording on its last frame,
+  // permanently. Falling back to the whole frame loses the zoom; returning NaN
+  // loses the recording.
+  const full = { x: 0, y: 0, width: sourceWidth, height: sourceHeight };
+  if (!Number.isFinite(sourceWidth) || !Number.isFinite(sourceHeight)) {
+    return { x: 0, y: 0, width: 0, height: 0 };
+  }
+  if (!Number.isFinite(scale) || !Number.isFinite(focus.x) || !Number.isFinite(focus.y)) {
+    return full;
+  }
   const safeScale = Math.max(1, scale);
   const width = sourceWidth / safeScale;
   const height = sourceHeight / safeScale;

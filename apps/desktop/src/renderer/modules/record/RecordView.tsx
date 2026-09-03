@@ -358,6 +358,12 @@ export function RecordView(): ReactElement {
     const configs = buildTrackConfigs();
     // Only pass the region when it can actually be applied; a window capture
     // must never be started with a crop it would ignore.
+    if (cursorEffectsActive) {
+      void window.novarec
+        .startCursorTracking()
+        .then((r) => setClickTrackingAvailable(r.clickTracking))
+        .catch(() => undefined);
+    }
     const effectsBounds = regionApplies && region ? region.rect : (capturedDisplay?.bounds ?? null);
     const options = {
       screenRegion: regionApplies ? screenRegion : null,
@@ -506,16 +512,15 @@ export function RecordView(): ReactElement {
 
   // Track the pointer only while a recording is live — it is a 60Hz sample and
   // a global hook, neither of which should run when nothing is being recorded.
+  // Tracking is started explicitly in `beginRecording`, BEFORE the capture
+  // pipeline is built: the effects stream reads the pointer as soon as it is
+  // created, and starting tracking afterwards left the first frames zoomed at
+  // the top-left corner instead of at the cursor. This only handles stopping.
   useEffect(() => {
-    if (recorder.state === 'idle' || !cursorEffectsActive) return undefined;
-    void window.novarec
-      .startCursorTracking()
-      .then((r) => setClickTrackingAvailable(r.clickTracking))
-      .catch(() => undefined);
-    return () => {
-      void window.novarec.stopCursorTracking().catch(() => undefined);
-    };
-  }, [recorder.state, cursorEffectsActive]);
+    if (recorder.state !== 'idle') return undefined;
+    void window.novarec.stopCursorTracking().catch(() => undefined);
+    return undefined;
+  }, [recorder.state]);
 
   useEffect(() => {
     if (recorder.state === 'idle') setZoomedIn(false);
