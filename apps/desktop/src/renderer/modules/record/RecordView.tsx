@@ -36,6 +36,7 @@ import {
   MP4_COPY_PRESET_ID,
   type RecordingContainer,
   type RecordingMode,
+  type RecordingQuality,
 } from '@novarec/shared';
 import { PhoneCameraPanel } from './PhoneCameraPanel.js';
 import { usePhoneCamera } from './usePhoneCamera.js';
@@ -81,6 +82,7 @@ export function RecordView(): ReactElement {
   const [cursorSmoothing, setCursorSmoothing] = useState(false);
   const [clickTrackingAvailable, setClickTrackingAvailable] = useState(true);
   const [zoomedIn, setZoomedIn] = useState(false);
+  const [recordingQuality, setRecordingQuality] = useState<RecordingQuality>('high');
   const [recordingMode, setRecordingMode] = useState<RecordingMode>('single');
   const [recordingContainer, setRecordingContainer] = useState<RecordingContainer>('mp4');
   const [webcamStatus, setWebcamStatus] = useState<{ state: string; message: string } | null>(null);
@@ -187,6 +189,7 @@ export function RecordView(): ReactElement {
     setRegion(s.region);
     setRecordingMode(s.recordingMode);
     setRecordingContainer(s.recordingContainer);
+    setRecordingQuality(s.recordingQuality);
     setCursorZoomEnabled(s.cursorZoomEnabled);
     setCursorZoomScale(s.cursorZoomScale);
     setCursorHighlight(s.cursorHighlight);
@@ -222,6 +225,7 @@ export function RecordView(): ReactElement {
         region,
         recordingMode,
         recordingContainer,
+        recordingQuality,
         cursorZoomEnabled,
         cursorZoomScale,
         cursorHighlight,
@@ -246,6 +250,7 @@ export function RecordView(): ReactElement {
     region,
     recordingMode,
     recordingContainer,
+    recordingQuality,
     cursorZoomEnabled,
     cursorZoomScale,
     cursorHighlight,
@@ -368,6 +373,7 @@ export function RecordView(): ReactElement {
     const options = {
       screenRegion: regionApplies ? screenRegion : null,
       singleFile: recordingMode === 'single',
+      quality: recordingQuality,
       cursorEffects:
         cursorEffectsActive && effectsBounds
           ? {
@@ -547,8 +553,19 @@ export function RecordView(): ReactElement {
       micMuted,
       micAvailable: micOn,
       webcamOn: cameraOn,
+      zoomed: zoomedIn,
+      zoomAvailable: cursorZoomEnabled && cursorEffectsActive,
     });
-  }, [recorder.state, recorder.elapsedMs, micMuted, micOn, cameraOn]);
+  }, [
+    recorder.state,
+    recorder.elapsedMs,
+    micMuted,
+    micOn,
+    cameraOn,
+    zoomedIn,
+    cursorZoomEnabled,
+    cursorEffectsActive,
+  ]);
 
   const controlHandler = useRef<(action: ControlAction) => void>(() => undefined);
   controlHandler.current = (action) => {
@@ -561,6 +578,8 @@ export function RecordView(): ReactElement {
       recorder.setMicMuted(next);
     } else if (action === 'toggleWebcam') {
       setCameraOn((on) => !on);
+    } else if (action === 'toggleZoom') {
+      toggleZoom();
     }
   };
   useEffect(() => window.novarec.onControlsAction((action) => controlHandler.current(action)), []);
@@ -582,17 +601,24 @@ export function RecordView(): ReactElement {
     } else if (action === 'marker') {
       if (recorder.state !== 'idle') recorder.addMarker();
     } else if (action === 'cursorZoomNow') {
-      if (recorder.state !== 'idle' && cursorZoomEnabled) {
-        setZoomedIn((on) => {
-          recorder.setZoomed(!on);
-          return !on;
-        });
-      }
+      toggleZoom();
     } else if (action === 'panicStop') {
       void recorder.stop();
     }
   };
   useEffect(() => window.novarec.onHotkey((action) => hotkeyHandler.current(action)), []);
+
+  // One place flips the zoom, so the shortcut and the floating button can never
+  // disagree about whether it is on.
+  const toggleZoomRef = useRef<() => void>(() => undefined);
+  toggleZoomRef.current = () => {
+    if (recorder.state === 'idle' || !cursorZoomEnabled || !cursorEffectsActive) return;
+    setZoomedIn((on) => {
+      recorder.setZoomed(!on);
+      return !on;
+    });
+  };
+  const toggleZoom = (): void => toggleZoomRef.current();
 
   const zoomShortcut = humanizeAccelerator(
     DEFAULT_HOTKEYS.find((h) => h.action === 'cursorZoomNow')?.accelerator ?? '',
@@ -888,6 +914,32 @@ export function RecordView(): ReactElement {
           <p className="mt-3 text-xs text-muted-app">
             Not sure what this machine can hold? Run the capacity check in{' '}
             <span className="text-app2">Settings → Performance</span>.
+          </p>
+
+          <SectionLabel className="mt-5">Quality</SectionLabel>
+          <div className="flex flex-wrap gap-2">
+            <FormatOption
+              active={recordingQuality === 'balanced'}
+              title="Balanced"
+              detail="Smaller files"
+              onClick={() => setRecordingQuality('balanced')}
+            />
+            <FormatOption
+              active={recordingQuality === 'high'}
+              title="High"
+              detail="Recommended"
+              onClick={() => setRecordingQuality('high')}
+            />
+            <FormatOption
+              active={recordingQuality === 'best'}
+              title="Best"
+              detail="Largest files"
+              onClick={() => setRecordingQuality('best')}
+            />
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-muted-app">
+            Costs disk space, not processing — the recorder simply gets more bits to keep text
+            sharp. Higher settings make no difference to how hard your machine works.
           </p>
 
           <SectionLabel className="mt-5">Cursor &amp; zoom</SectionLabel>

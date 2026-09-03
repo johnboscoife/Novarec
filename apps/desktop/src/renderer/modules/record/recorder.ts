@@ -1,4 +1,5 @@
-import type { TrackConfig } from '@novarec/shared';
+import type { RecordingQuality, TrackConfig } from '@novarec/shared';
+import { recommendedAudioBitrate, recommendedVideoBitrate } from '@novarec/capture';
 import { CroppedScreenStream, type RegionSpec } from './cropStream.js';
 import { CompositedVideoStream } from './compositeStream.js';
 import { CursorEffectsStream, type CursorEffectsOptions } from './cursorEffects.js';
@@ -11,7 +12,12 @@ import { CursorEffectsStream, type CursorEffectsOptions } from './cursorEffects.
  * pipeline, off the UI thread. See ADR-0005 (MediaRecorder) and ADR-0006
  * (per-track writers).
  */
+// Profiles best-first. `avc1.42E01F` is Constrained BASELINE — no CABAC, no
+// B-frames, no 8x8 transform — which every recording used to get. High profile
+// is materially better at the same bitrate and is universally playable now.
 const VIDEO_MIME = [
+  'video/mp4;codecs=avc1.640028',
+  'video/mp4;codecs=avc1.4D4028',
   'video/mp4;codecs=avc1.42E01F',
   'video/mp4',
   'video/webm;codecs=vp9',
@@ -21,6 +27,8 @@ const VIDEO_MIME = [
 // composited canvas + mixed mic audio). A video-only mime string silently drops
 // the audio track, so the codec list must name an audio codec too.
 const VIDEO_AUDIO_MIME = [
+  'video/mp4;codecs=avc1.640028,mp4a.40.2',
+  'video/mp4;codecs=avc1.4D4028,mp4a.40.2',
   'video/mp4;codecs=avc1.42E01F,mp4a.40.2',
   'video/mp4',
   'video/webm;codecs=vp9,opus',
@@ -135,6 +143,8 @@ export interface RecorderOptions {
    * click ripples, smoothed pointer. Null leaves the screen untouched.
    */
   cursorEffects?: CursorEffectsOptions | null;
+  /** How much bitrate the recording is given. */
+  quality?: RecordingQuality;
   /**
    * Record ONE already-muxed file (video + mixed audio) instead of separate
    * per-source tracks. The result is a finished, playable recording the moment
@@ -174,6 +184,8 @@ class TrackRecorder {
      * the phone's preview dies and it has to be paired again.
      */
     private readonly ownsStream = true,
+    private readonly quality: RecordingQuality = 'high',
+    private readonly targetFps = 30,
   ) {}
 
   start(): void {
@@ -183,7 +195,22 @@ class TrackRecorder {
     const hasAudio = this.stream.getAudioTracks().length > 0;
     const candidates = hasVideo ? (hasAudio ? VIDEO_AUDIO_MIME : VIDEO_MIME) : AUDIO_MIME;
     const mime = pickMime(candidates);
-    this.recorder = new MediaRecorder(this.stream, mime ? { mimeType: mime } : undefined);
+
+    // Without an explicit bitrate MediaRecorder settles around 2.5 Mbps at ANY
+    // resolution, which is what made 1080p screen text look soft. Size it from
+    // what is actually being captured.
+    const settings = this.stream.getVideoTracks()[0]?.getSettings();
+    const width = settings?.width ?? 1920;
+    const height = settings?.height ?? 1080;
+    const fps = settings?.frameRate ?? this.targetFps;
+    const options: MediaRecorderOptions = {
+      ...(mime ? { mimeType: mime } : {}),
+      ...(hasVideo
+        ? { videoBitsPerSecond: recommendedVideoBitrate(width, height, fps, this.quality) }
+        : {}),
+      ...(hasAudio ? { audioBitsPerSecond: recommendedAudioBitrate(this.quality) } : {}),
+    };
+    this.recorder = new MediaRecorder(this.stream, options);
     this.recorder.ondataavailable = (event) => this.enqueue(event.data);
     this.recorder.onerror = () => this.onError(`${this.label} reported an error`);
     this.lastChunkAt = performance.now();
@@ -461,6 +488,8 @@ export class MultiTrackRecorder {
    * is how a camera ends up dead after one take.
    */
   private ownedStreams: MediaStream[] = [];
+  private quality: RecordingQuality = 'high';
+  private fps = 30;
   // Recorded-elapsed clock. The manifest's segment offsets are cumulative
   // RECORDED time, so its pause/resume/stop timestamps must be on that same
   // scale — `performance.now()` is time since the page loaded, which in a
@@ -481,6 +510,8 @@ export class MultiTrackRecorder {
     const enabled = configs.filter((c) => c.enabled);
     if (enabled.length === 0) throw new Error('Enable at least one track to record');
 
+    this.quality = options?.quality ?? 'high';
+    this.fps = targetFps;
     const singleFile = options?.singleFile === true;
     // In single-file mode main is told about ONE track, so it creates one
     // folder whose finalized file already IS the finished recording.
@@ -637,6 +668,8 @@ export class MultiTrackRecorder {
         this.callbacks.onSegmentCount([...this.perTrack.values()].reduce((a, b) => a + b, 0));
       },
       ownsStream,
+      this.quality,
+      this.fps,
     );
   }
 

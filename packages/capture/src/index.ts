@@ -9,4 +9,5 @@ export * from './geometry.js';
 export * from './sustain.js';
 export * from './sources.js';
 export * from './cameras.js';
+export * from './bitrate.js';
 export * from './sync.js';

@@ -20,6 +20,8 @@ const INITIAL: RecordControlState = {
   micMuted: false,
   micAvailable: false,
   webcamOn: false,
+  zoomed: false,
+  zoomAvailable: false,
 };
 
 export function ControlsOverlay(): ReactElement {
@@ -43,6 +45,14 @@ export function ControlsOverlay(): ReactElement {
         {formatElapsed(st.elapsedMs)}
       </span>
 
+      {/* A zoomed capture is otherwise invisible while recording — the screen
+          looks normal, and only the file is zoomed. */}
+      {st.zoomed && (
+        <span className="shrink-0 rounded-md bg-blue-500/25 px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-blue-200 ring-1 ring-inset ring-blue-400/40">
+          ZOOM
+        </span>
+      )}
+
       <div className="wc-nodrag flex items-center gap-1">
         <PillButton
           label={paused ? 'Resume' : 'Pause'}
@@ -60,6 +70,15 @@ export function ControlsOverlay(): ReactElement {
             onClick={() => send('muteMic')}
           >
             {st.micMuted ? '🔇' : '🎤'}
+          </PillButton>
+        )}
+        {st.zoomAvailable && (
+          <PillButton
+            label={st.zoomed ? 'Zoom out' : 'Zoom to cursor'}
+            active={st.zoomed}
+            onClick={() => send('toggleZoom')}
+          >
+            {st.zoomed ? '🔎' : '🔍'}
           </PillButton>
         )}
         <PillButton

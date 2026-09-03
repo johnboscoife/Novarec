@@ -1,5 +1,38 @@
 # Release notes
 
+## 0.0.52 — much better picture quality, and zoom on the floating controller
+
+### Recordings were capped at about 2.5 Mbps. All of them.
+
+`MediaRecorder` given no explicit bitrate settles around **2.5 Mbps whatever the
+resolution** — fine for a webcam, nowhere near enough for 1080p screen content,
+where text goes soft and flat colour blocks up. NovaRec never set one, so every
+recording it has ever made was quietly capped there.
+
+Bitrate is now sized from what is actually being captured. At 1080p30 that is
+**9.3 Mbps** on the default setting, against 2.5 before.
+
+The codec profile was also the lowest H.264 offers — Constrained Baseline, with
+no CABAC, no B-frames, no 8×8 transform. NovaRec now asks for **High profile**
+first and falls back only if it is unavailable. That is a further gain at the
+same bitrate.
+
+A **Quality** control on the Record page offers Balanced, High (default) and
+Best. It costs disk space, not processing: the recorder is simply given more
+bits. Your machine works no harder on the highest setting.
+
+### Zoom on the floating controller
+
+- A **ZOOM** badge appears on the floating controller while the capture is
+  zoomed. A zoomed recording is otherwise invisible while you make it — the
+  screen looks entirely normal and only the file is zoomed.
+- A **zoom button** sits next to the mic and camera buttons, so zoom can be
+  turned on and off mid-recording without the keyboard shortcut. It appears only
+  when zoom is switched on for the take.
+
+The shortcut and the button share one code path, so they cannot disagree about
+whether zoom is currently on.
+
 ## 0.0.51 — fixes recordings freezing at the moment of zoom
 
 0.0.50's zoom could freeze the recording on the frame where you pressed it, for

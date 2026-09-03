@@ -37,6 +37,7 @@ export const ControlActionSchema = z.enum([
   'resume',
   'stop',
   'dismiss',
+  'toggleZoom',
   'muteMic',
   'toggleWebcam',
 ]);
@@ -49,6 +50,10 @@ export const RecordControlStateSchema = z.object({
   micMuted: z.boolean(),
   micAvailable: z.boolean(),
   webcamOn: z.boolean(),
+  /** The capture is zoomed toward the pointer right now. */
+  zoomed: z.boolean().default(false),
+  /** Zoom is switched on for this take, so the control is worth showing. */
+  zoomAvailable: z.boolean().default(false),
 });
 export type RecordControlState = z.infer<typeof RecordControlStateSchema>;
 
@@ -60,6 +65,10 @@ export type RecordControlState = z.infer<typeof RecordControlStateSchema>;
  * source in its own file, which allows re-balancing audio or re-framing later
  * but requires a muxing pass to produce something watchable.
  */
+/** How much bitrate a recording is given. Higher costs disk, not CPU. */
+export const RecordingQualitySchema = z.enum(['balanced', 'high', 'best']);
+export type RecordingQuality = z.infer<typeof RecordingQualitySchema>;
+
 export const RecordingModeSchema = z.enum(['single', 'tracks']);
 export type RecordingMode = z.infer<typeof RecordingModeSchema>;
 
@@ -117,6 +126,7 @@ export const CaptureSettingsSchema = z.object({
    */
   cursorHidden: z.boolean().default(false),
   cursorSmoothing: z.boolean().default(false),
+  recordingQuality: RecordingQualitySchema.default('high'),
   recordingMode: RecordingModeSchema.default('single'),
   recordingContainer: RecordingContainerSchema.default('mp4'),
   webcamZoom: z.number().min(1).max(4).default(1),
@@ -143,6 +153,7 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   cursorClickEffects: false,
   cursorHidden: false,
   cursorSmoothing: false,
+  recordingQuality: 'high',
   recordingMode: 'single',
   recordingContainer: 'mp4',
   webcamZoom: 1,
