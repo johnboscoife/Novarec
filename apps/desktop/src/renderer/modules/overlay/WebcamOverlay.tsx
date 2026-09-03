@@ -11,6 +11,22 @@ import type { WebcamShape } from '@novarec/shared';
 const BASE_BACKOFF_MS = 500;
 const MAX_BACKOFF_MS = 8000;
 const MAX_ATTEMPTS = 6;
+/**
+ * A camera driver can accept the request and then never answer — Windows' phone
+ * "connected camera" does exactly this when the phone isn't actually streaming.
+ * Without a deadline the await never settles, so no retry, no error, and a
+ * window that spins forever.
+ */
+const OPEN_TIMEOUT_MS = 8000;
+/** Opened, but no picture arrived — worth saying rather than showing black. */
+const FIRST_FRAME_TIMEOUT_MS = 6000;
+
+function openTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+  ]);
+}
 
 function radiusFor(shape: WebcamShape): string {
   if (shape === 'circle') return '50%';
@@ -22,6 +38,7 @@ export function WebcamOverlay(): ReactElement {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [shape, setShape] = useState<WebcamShape>('circle');
   const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [label, setLabel] = useState('');
   const [zoom, setZoom] = useState(1);
   const [mirror, setMirror] = useState(true);
   const [status, setStatus] = useState<'connecting' | 'live' | 'error'>('connecting');
@@ -40,6 +57,7 @@ export function WebcamOverlay(): ReactElement {
     if (s === 'circle' || s === 'rounded' || s === 'square') setShape(s);
     const d = params.get('deviceId');
     if (d) setDeviceId(d);
+    setLabel(params.get('label') ?? '');
     const z = Number(params.get('zoom'));
     if (Number.isFinite(z) && z >= 1) setZoom(z);
     const m = params.get('mirror');
@@ -47,6 +65,7 @@ export function WebcamOverlay(): ReactElement {
     return window.novarec.onWebcamConfig((config) => {
       setShape(config.shape);
       setDeviceId(config.deviceId);
+      setLabel(config.label);
       setZoom(config.zoom);
       setMirror(config.mirror);
     });
@@ -97,16 +116,38 @@ export function WebcamOverlay(): ReactElement {
         return 'That camera is not available right now.';
       }
       if (name === 'NotAllowedError') return 'Camera access was blocked.';
+      if (error instanceof Error && error.message === 'timeout') {
+        return 'That camera did not respond.';
+      }
       return 'That camera did not open.';
     };
 
-    const attach = async (): Promise<void> => {
+    /**
+     * Find the SAME camera again after Windows reassigned its id. This is not
+     * substituting a different device — it matches on the name the user picked,
+     * and only that name.
+     */
+    const reresolveByLabel = async (): Promise<string | null> => {
+      if (!label) return null;
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const match = devices.find((d) => d.kind === 'videoinput' && d.label === label);
+        return match && match.deviceId !== deviceId ? match.deviceId : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const attach = async (wantedId: string | null = deviceId): Promise<void> => {
       clearTimer();
       try {
-        const next = await navigator.mediaDevices.getUserMedia({
-          video: deviceId ? { deviceId: { exact: deviceId } } : true,
-          audio: false,
-        });
+        const next = await openTimeout(
+          navigator.mediaDevices.getUserMedia({
+            video: wantedId ? { deviceId: { exact: wantedId } } : true,
+            audio: false,
+          }),
+          OPEN_TIMEOUT_MS,
+        );
         if (cancelled) {
           next.getTracks().forEach((t) => t.stop());
           return;
@@ -123,6 +164,14 @@ export function WebcamOverlay(): ReactElement {
           void el.play().catch(() => undefined);
         }
 
+        // Opened, but a virtual camera can sit there sending nothing.
+        const frameWatch = window.setTimeout(() => {
+          if (!cancelled && videoRef.current && videoRef.current.readyState < 2) {
+            setMessage('Connected, but no video yet — check the phone is streaming.');
+          }
+        }, FIRST_FRAME_TIMEOUT_MS);
+        el?.addEventListener('loadeddata', () => window.clearTimeout(frameWatch), { once: true });
+
         next.getVideoTracks().forEach((track) => {
           track.onended = () => {
             if (!cancelled) retryLater('The camera disconnected.');
@@ -138,6 +187,13 @@ export function WebcamOverlay(): ReactElement {
         });
       } catch (error) {
         if (cancelled) return;
+        // The id may simply have changed under us; re-find the same camera by
+        // name once before treating this as a failure.
+        const freshId = await reresolveByLabel();
+        if (freshId && !cancelled) {
+          void attach(freshId);
+          return;
+        }
         retryLater(describe(error));
       }
     };
@@ -150,7 +206,7 @@ export function WebcamOverlay(): ReactElement {
       clearTimer();
       current?.getTracks().forEach((t) => t.stop());
     };
-  }, [deviceId]);
+  }, [deviceId, label]);
 
   const radius = radiusFor(shape);
   const container: CSSProperties = {

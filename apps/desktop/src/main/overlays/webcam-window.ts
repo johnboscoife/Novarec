@@ -18,6 +18,7 @@ interface Bounds {
 
 interface WebcamConfig {
   deviceId: string | null;
+  label: string;
   shape: WebcamShape;
   sizePx: number;
   zoom: number;
@@ -123,6 +124,7 @@ export function showWebcam(config: WebcamConfig): void {
 
   loadOverlayRoute(win, {
     deviceId: config.deviceId ?? '',
+    label: config.label,
     shape: config.shape,
     zoom: String(config.zoom),
     mirror: config.mirror ? '1' : '0',

@@ -39,6 +39,7 @@ export interface NovaRecApi {
   onWebcamConfig(
     callback: (config: {
       deviceId: string | null;
+      label: string;
       shape: WebcamShape;
       sizePx: number;
       zoom: number;

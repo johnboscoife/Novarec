@@ -118,6 +118,10 @@ export const ipcContract = {
   'webcam:show': {
     request: z.object({
       deviceId: z.string().nullable(),
+      // The device's NAME, so the same camera can be found again when Windows
+      // reassigns its id — which the phone "connected camera" does every time
+      // it re-registers, leaving an exact-id match permanently unmatchable.
+      label: z.string().default(''),
       shape: WebcamShapeSchema,
       sizePx: z.number().int().positive(),
       // Zoom past a camera's own letterboxing; mirror for a selfie view.

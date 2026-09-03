@@ -1,5 +1,34 @@
 # Release notes
 
+## 0.0.48 — a camera that never answers no longer spins forever
+
+0.0.47 added retry-with-backoff for a camera that fails to open. It never ran,
+because the failure this camera produces isn't a failure — the driver accepts
+the request and then **never answers at all**. The await never settled, so there
+was no error to back off from and nothing to report: just a spinner.
+
+Three changes:
+
+- **Opening a camera now has a deadline.** If a driver hasn't answered in eight
+  seconds, that is treated as a failure — reported, and retried with the backoff
+  that already existed. "That camera did not respond" beats an endless spinner.
+
+- **A camera that moves is found again.** Windows reassigns the phone
+  "connected camera" a new device id every time it re-registers, which left an
+  exact-id match permanently unmatchable — the camera was gone forever until you
+  re-picked it by hand. The overlay now knows the camera's _name_ and re-finds
+  it when the id changes. This is not the silent substitution removed in 0.0.47:
+  it matches the name you chose, and only that name.
+
+- **Opened but silent is now visible.** A virtual camera can connect and then
+  send nothing. If no picture arrives within six seconds you get "Connected, but
+  no video yet — check the phone is streaming" rather than a black circle.
+
+Worth being straight about the limit: these turn a silent spinner into an honest
+report, and recover from an id change. If the phone itself isn't streaming to
+Windows, no change here can make it — the message will now tell you that is what
+is happening.
+
 ## 0.0.47 — the floating camera stops opening the wrong one, and stops spinning
 
 Two faults in the floating camera window, both showing up with Windows' phone

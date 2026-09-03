@@ -429,6 +429,7 @@ export function RecordView(): ReactElement {
     const timer = window.setTimeout(() => {
       void window.novarec.showWebcam({
         deviceId: cameraDeviceId,
+        label: videoDevices.find((d) => (d.deviceId ?? d.id) === cameraDeviceId)?.label ?? '',
         shape: webcamShape,
         sizePx: webcamSize,
         zoom: webcamZoom,
@@ -440,6 +441,7 @@ export function RecordView(): ReactElement {
   }, [
     cameraOn,
     cameraDeviceId,
+    videoDevices,
     webcamShape,
     webcamSize,
     webcamZoom,

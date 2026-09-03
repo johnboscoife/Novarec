@@ -21,6 +21,7 @@ const api: NovaRecApi = {
       _event: IpcRendererEvent,
       config: {
         deviceId: string | null;
+        label: string;
         shape: WebcamShape;
         sizePx: number;
         zoom: number;
