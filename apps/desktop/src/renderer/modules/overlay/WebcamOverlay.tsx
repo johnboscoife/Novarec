@@ -28,6 +28,16 @@ function openTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   ]);
 }
 
+/**
+ * Windows' phone "connected camera" is backed by Phone Link, which shows its own
+ * "Connecting to <phone>" dialog when something opens the device. Until that
+ * finishes there is no camera to open, and re-requesting only spawns the dialog
+ * again — so this case gets its own message and no retry.
+ */
+function isWindowsPhoneCamera(label: string): boolean {
+  return /windows virtual camera/i.test(label);
+}
+
 function radiusFor(shape: WebcamShape): string {
   if (shape === 'circle') return '50%';
   if (shape === 'rounded') return '18px';
@@ -43,6 +53,14 @@ export function WebcamOverlay(): ReactElement {
   const [mirror, setMirror] = useState(true);
   const [status, setStatus] = useState<'connecting' | 'live' | 'error'>('connecting');
   const [message, setMessage] = useState<string | null>(null);
+
+  // Mirror the state to the main window: this window is small, often behind
+  // something, and is not where the user chose the camera.
+  useEffect(() => {
+    void window.novarec
+      .reportWebcamStatus({ state: status, message: message ?? '' })
+      .catch(() => undefined);
+  }, [status, message]);
 
   // Make the window chrome fully transparent so only the shaped video shows.
   useEffect(() => {
@@ -192,6 +210,19 @@ export function WebcamOverlay(): ReactElement {
         const freshId = await reresolveByLabel();
         if (freshId && !cancelled) {
           void attach(freshId);
+          return;
+        }
+        // A camera that accepts the request and never answers is usually
+        // Windows still trying to reach the phone behind it — its own
+        // "Connecting to…" dialog is on screen waiting for the user. Asking
+        // again just spawns another one, so stop and explain instead.
+        if (error instanceof Error && error.message === 'timeout') {
+          setStatus('error');
+          setMessage(
+            isWindowsPhoneCamera(label)
+              ? `Windows is still connecting to ${label.replace(/\s*\(.*\)\s*$/, '') || 'your phone'}. Finish that in the Windows dialog, then turn the camera off and on again.`
+              : 'That camera did not respond. Turn the camera off and on again to retry.',
+          );
           return;
         }
         retryLater(describe(error));

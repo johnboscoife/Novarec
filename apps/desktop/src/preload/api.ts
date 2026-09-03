@@ -36,6 +36,8 @@ export interface NovaRecApi {
   ): Promise<IpcResponse<'capture:probeMotion'>>;
   showWebcam(payload: IpcRequest<'webcam:show'>): Promise<IpcResponse<'webcam:show'>>;
   hideWebcam(): Promise<IpcResponse<'webcam:hide'>>;
+  reportWebcamStatus(payload: IpcRequest<'webcam:status'>): Promise<IpcResponse<'webcam:status'>>;
+  onWebcamStatus(callback: (status: IpcRequest<'webcam:status'>) => void): () => void;
   onWebcamConfig(
     callback: (config: {
       deviceId: string | null;

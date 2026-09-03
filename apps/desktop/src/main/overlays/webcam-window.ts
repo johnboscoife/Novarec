@@ -136,3 +136,9 @@ export function hideWebcam(): void {
   if (overlay && !overlay.isDestroyed()) overlay.close();
   overlay = null;
 }
+
+/** Relay the overlay's camera state to the main window. */
+export function dispatchWebcamStatus(status: { state: string; message: string }): void {
+  const windows = BrowserWindow.getAllWindows().filter((w) => w !== overlay && !w.isDestroyed());
+  for (const win of windows) win.webContents.send('webcam:status', status);
+}

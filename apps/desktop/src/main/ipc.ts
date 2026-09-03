@@ -26,7 +26,7 @@ import {
 } from './phone/server.js';
 import { setPendingCaptureSource } from './capture/display-media.js';
 import { startProbeMotion, stopProbeMotion } from './capture/probe-motion.js';
-import { showWebcam, hideWebcam } from './overlays/webcam-window.js';
+import { dispatchWebcamStatus, showWebcam, hideWebcam } from './overlays/webcam-window.js';
 import {
   showControls,
   hideControls,
@@ -163,6 +163,10 @@ export function registerIpcHandlers(): void {
   });
   handleChannel('controls:hide', () => {
     hideControls();
+    return { ok: true as const };
+  });
+  handleChannel('webcam:status', (req) => {
+    dispatchWebcamStatus(req);
     return { ok: true as const };
   });
   handleChannel('controls:command', (req) => {

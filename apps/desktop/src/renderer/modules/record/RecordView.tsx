@@ -73,6 +73,7 @@ export function RecordView(): ReactElement {
   const [webcamSize, setWebcamSize] = useState(240);
   const [recordingMode, setRecordingMode] = useState<RecordingMode>('single');
   const [recordingContainer, setRecordingContainer] = useState<RecordingContainer>('mp4');
+  const [webcamStatus, setWebcamStatus] = useState<{ state: string; message: string } | null>(null);
   const [webcamZoom, setWebcamZoom] = useState(1);
   const [webcamMirror, setWebcamMirror] = useState(true);
   const [micMuted, setMicMuted] = useState(false);
@@ -449,6 +450,14 @@ export function RecordView(): ReactElement {
     capturedDisplay,
   ]);
 
+  // The floating camera window reports whether it actually opened. Surfacing it
+  // HERE matters: that window is small and often hidden behind others, and this
+  // is where the camera was chosen.
+  useEffect(() => window.novarec.onWebcamStatus((status) => setWebcamStatus(status)), []);
+  useEffect(() => {
+    if (!cameraOn) setWebcamStatus(null);
+  }, [cameraOn]);
+
   // Always tear the overlay down when leaving Record.
   useEffect(() => () => void window.novarec.hideWebcam(), []);
 
@@ -742,12 +751,23 @@ export function RecordView(): ReactElement {
           {(cameraOn || micOn) && (
             <div className="mt-3 space-y-2">
               {cameraOn && (
-                <CameraSelect
-                  cameras={videoDevices}
-                  value={cameraDeviceId}
-                  onChange={setCameraDeviceId}
-                  wifiPhoneConnected={phone.stream !== null}
-                />
+                <>
+                  <CameraSelect
+                    cameras={videoDevices}
+                    value={cameraDeviceId}
+                    onChange={setCameraDeviceId}
+                    wifiPhoneConnected={phone.stream !== null}
+                  />
+                  {webcamStatus && webcamStatus.state !== 'live' && webcamStatus.message && (
+                    <p
+                      className={`pl-[88px] text-xs leading-relaxed ${
+                        webcamStatus.state === 'error' ? 'text-amber-400' : 'text-muted-app'
+                      }`}
+                    >
+                      {webcamStatus.message}
+                    </p>
+                  )}
+                </>
               )}
               {micOn && (
                 <>

@@ -143,6 +143,16 @@ export const ipcContract = {
     response: Ok,
   },
   'webcam:hide': { request: z.void(), response: Ok },
+  // The floating camera reports what it is doing back to the main window. A
+  // camera that cannot open is a problem the user needs to see where they
+  // CHOSE the camera, not only in a small window that may be behind something.
+  'webcam:status': {
+    request: z.object({
+      state: z.enum(['connecting', 'live', 'error']),
+      message: z.string(),
+    }),
+    response: Ok,
+  },
 
   // Floating recording control window. The main window shows/hides it and
   // publishes state; the control sends commands back (routed to the main window).

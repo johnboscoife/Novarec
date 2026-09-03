@@ -1,5 +1,31 @@
 # Release notes
 
+## 0.0.49 — says what the spinning camera is actually waiting for
+
+The endless spinner turned out not to be NovaRec at all. Windows' phone
+"connected camera" is backed by Phone Link, and opening that camera makes
+**Windows** show its own "Connecting to <your phone>" dialog. Until that
+finishes there is no camera to open. NovaRec was waiting on a device Windows had
+not connected yet, and showing nothing about it.
+
+NovaRec was also making it worse. Retrying the camera re-requests the device,
+and each request spawns that Windows dialog again — so the retry logic added a
+version ago was feeding the very thing it looked like it should fix.
+
+- **A camera Windows is still connecting to is no longer retried.** NovaRec
+  stops and says: "Windows is still connecting to <phone>. Finish that in the
+  Windows dialog, then turn the camera off and on again." Other kinds of failure
+  still retry with backoff, as they should.
+
+- **The floating window now reports to the main window.** A camera that will not
+  open is a problem you need to see where you _chose_ the camera — not only in a
+  small round window that is probably behind something else. The message appears
+  under the camera picker.
+
+If that Windows dialog never finishes connecting, the fix is in Windows' Mobile
+devices settings, not here — but NovaRec will now tell you that is what it is
+waiting for instead of spinning silently.
+
 ## 0.0.48 — a camera that never answers no longer spins forever
 
 0.0.47 added retry-with-backoff for a camera that fails to open. It never ran,

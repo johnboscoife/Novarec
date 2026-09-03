@@ -16,6 +16,15 @@ const api: NovaRecApi = {
   setProbeMotion: (payload) => ipcRenderer.invoke('capture:probeMotion', payload),
   showWebcam: (payload) => ipcRenderer.invoke('webcam:show', payload),
   hideWebcam: () => ipcRenderer.invoke('webcam:hide'),
+  reportWebcamStatus: (payload) => ipcRenderer.invoke('webcam:status', payload),
+  onWebcamStatus: (callback) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      status: { state: 'connecting' | 'live' | 'error'; message: string },
+    ): void => callback(status);
+    ipcRenderer.on('webcam:status', listener);
+    return () => ipcRenderer.removeListener('webcam:status', listener);
+  },
   onWebcamConfig: (callback) => {
     const listener = (
       _event: IpcRendererEvent,
