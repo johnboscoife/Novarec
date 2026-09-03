@@ -1,6 +1,7 @@
 import type { TrackConfig } from '@novarec/shared';
 import { CroppedScreenStream, type RegionSpec } from './cropStream.js';
 import { CompositedVideoStream } from './compositeStream.js';
+import { CursorEffectsStream, type CursorEffectsOptions } from './cursorEffects.js';
 
 /**
  * Multi-track recording from the renderer. Each enabled track (screen, camera,
@@ -87,6 +88,7 @@ async function acquireStream(
   targetFps: number,
   screenSourceId: string | null,
   region: RegionSpec | null = null,
+  hideCursor = false,
 ): Promise<MediaStream> {
   const media = navigator.mediaDevices;
   switch (config.kind) {
@@ -103,7 +105,9 @@ async function acquireStream(
         ? { width: { max: 3840 }, height: { max: 2160 } }
         : { width: { max: 1920 }, height: { max: 1080 } };
       return media.getDisplayMedia({
-        video: { frameRate: targetFps, ...cap },
+        // Leaving the pointer OUT of the capture is what makes smoothing
+        // possible at all: one burned into the source pixels cannot be eased.
+        video: { frameRate: targetFps, ...cap, ...(hideCursor ? { cursor: 'never' } : {}) },
         audio: false,
       });
     }
@@ -126,6 +130,11 @@ async function acquireStream(
 export interface RecorderOptions {
   /** Record only this region of the captured display (null = the full display). */
   screenRegion?: RegionSpec | null;
+  /**
+   * Live cursor effects drawn into the capture: zoom toward the pointer, ring,
+   * click ripples, smoothed pointer. Null leaves the screen untouched.
+   */
+  cursorEffects?: CursorEffectsOptions | null;
   /**
    * Record ONE already-muxed file (video + mixed audio) instead of separate
    * per-source tracks. The result is a finished, playable recording the moment
@@ -445,6 +454,7 @@ export class MultiTrackRecorder {
   private croppedScreens: CroppedScreenStream[] = [];
   private mixer: AudioMixer | null = null;
   private composited: CompositedVideoStream | null = null;
+  private cursorEffects: CursorEffectsStream | null = null;
   /**
    * Streams this recorder OPENED and must therefore close. Anything handed in
    * by the caller is deliberately absent: releasing a device we did not acquire
@@ -514,7 +524,13 @@ export class MultiTrackRecorder {
           // Region capture: record only the picked rect. `getDisplayMedia` can
           // only hand back a whole display, so the crop is applied to the frames
           // before they reach the encoder.
-          const raw = await acquireStream(config, targetFps, screenSourceId, options.screenRegion);
+          const raw = await acquireStream(
+            config,
+            targetFps,
+            screenSourceId,
+            options.screenRegion,
+            options.cursorEffects?.drawCursor ?? false,
+          );
           const cropped = await CroppedScreenStream.create(raw, options.screenRegion, targetFps);
           if (cropped) {
             this.croppedScreens.push(cropped);
@@ -525,7 +541,29 @@ export class MultiTrackRecorder {
         } else {
           stream =
             providedStreams?.[config.id] ??
-            (await acquireStream(config, targetFps, screenSourceId));
+            (await acquireStream(
+              config,
+              targetFps,
+              screenSourceId,
+              null,
+              config.kind === 'screen' ? (options?.cursorEffects?.drawCursor ?? false) : false,
+            ));
+        }
+        // Cursor effects are drawn onto the SCREEN only, after any region crop
+        // — the crop changes what the frame contains, and the pointer has to be
+        // mapped into whatever the frame ended up being.
+        if (config.kind === 'screen' && options?.cursorEffects) {
+          try {
+            const effects = await CursorEffectsStream.create(stream, options.cursorEffects);
+            this.cursorEffects = effects;
+            this.ownedStreams.push(stream);
+            stream = effects.stream;
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : 'unknown error';
+            this.callbacks.onError(
+              `Cursor effects are unavailable (${reason}) — recording without them.`,
+            );
+          }
         }
         // A stream the caller handed us stays theirs to close.
         const owned = providedStreams?.[config.id] !== stream;
@@ -565,6 +603,8 @@ export class MultiTrackRecorder {
       this.mixer = null;
       this.composited?.stop();
       this.composited = null;
+      this.cursorEffects?.stop();
+      this.cursorEffects = null;
       this.releaseOwnedStreams();
       await window.novarec.stopRecording({ recordingId, atMs: this.elapsedMs() });
       this.recordingId = null;
@@ -665,6 +705,16 @@ export class MultiTrackRecorder {
     this.tracks.push(recorder);
   }
 
+  /** Zoom the capture toward the pointer, or back out. No-op without effects. */
+  setZoomed(zoomed: boolean): void {
+    this.cursorEffects?.setZoomed(zoomed);
+  }
+
+  /** Whether the capture is currently zoomed in. */
+  get zoomed(): boolean {
+    return this.cursorEffects?.zoomed ?? false;
+  }
+
   /** The live recording's id, or null when nothing is being recorded. */
   get id(): string | null {
     return this.recordingId;
@@ -726,6 +776,8 @@ export class MultiTrackRecorder {
     this.mixer = null;
     this.composited?.stop();
     this.composited = null;
+    this.cursorEffects?.stop();
+    this.cursorEffects = null;
     // Every device this recorder opened is closed here, so nothing is left
     // held after a take — a camera stuck 'in use' is the classic symptom.
     this.releaseOwnedStreams();

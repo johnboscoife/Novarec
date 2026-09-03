@@ -197,6 +197,10 @@ export const ipcContract = {
       totalBytes: z.number().nonnegative(),
     }),
   },
+  // Pointer tracking for live cursor effects. Main samples the pointer and
+  // pushes `cursor:sample` events; the renderer maps them onto the frame.
+  'cursor:start': { request: z.void(), response: z.object({ clickTracking: z.boolean() }) },
+  'cursor:stop': { request: z.void(), response: Ok },
   'recording:listOrphans': { request: z.void(), response: z.array(OrphanedRecordingSchema) },
   'recording:recover': { request: z.object({ dir: z.string() }), response: RecoveryResultSchema },
   // Open the recordings vault (raw segments + recovered files) in the OS.

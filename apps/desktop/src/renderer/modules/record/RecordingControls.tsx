@@ -12,12 +12,17 @@ interface RecordingControlsProps {
   recorder: RecorderControls;
   canStart: boolean;
   onStart: () => void;
+  /** The capture is zoomed toward the pointer right now. */
+  zoomed?: boolean;
+  zoomShortcut?: string;
 }
 
 export function RecordingControls({
   recorder,
   canStart,
   onStart,
+  zoomed = false,
+  zoomShortcut,
 }: RecordingControlsProps): ReactElement {
   const { state, elapsedMs, segmentCount, error, markerCount } = recorder;
   const active = state !== 'idle';
@@ -42,6 +47,16 @@ export function RecordingControls({
           <span className="text-sm font-medium">{statusLabel}</span>
           {active && (
             <span className="font-mono text-sm text-app2">{formatElapsed(elapsedMs)}</span>
+          )}
+          {active && zoomed && (
+            // Recording zoomed is invisible from the app window otherwise, and
+            // it is baked into the file.
+            <span
+              className="rounded-md bg-blue-600/20 px-2 py-0.5 text-xs font-medium text-blue-300 ring-1 ring-inset ring-blue-500/40"
+              title={zoomShortcut ? `Press ${zoomShortcut} to zoom out` : undefined}
+            >
+              Zoomed
+            </span>
           )}
           {active && (
             <span className="text-xs text-muted-app">

@@ -103,6 +103,20 @@ export const CaptureSettingsSchema = z.object({
    * black bars are part of the picture, so no amount of CSS fitting removes
    * them; only zooming past them does.
    */
+  /** Zoom toward the pointer when the shortcut is pressed, and how far. */
+  cursorZoomEnabled: z.boolean().default(true),
+  cursorZoomScale: z.number().min(1.2).max(4).default(2),
+  /** Draw a soft ring around the pointer. */
+  cursorHighlight: z.boolean().default(false),
+  /** Ripple on each click (needs the global hook; silently absent without it). */
+  cursorClickEffects: z.boolean().default(false),
+  /**
+   * Leave the real pointer out of the capture and draw our own. Hiding it is
+   * also what makes smoothing possible: a pointer burned into the source pixels
+   * cannot be eased.
+   */
+  cursorHidden: z.boolean().default(false),
+  cursorSmoothing: z.boolean().default(false),
   recordingMode: RecordingModeSchema.default('single'),
   recordingContainer: RecordingContainerSchema.default('mp4'),
   webcamZoom: z.number().min(1).max(4).default(1),
@@ -123,6 +137,12 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   micDeviceId: null,
   webcamShape: 'circle',
   webcamSize: 240,
+  cursorZoomEnabled: true,
+  cursorZoomScale: 2,
+  cursorHighlight: false,
+  cursorClickEffects: false,
+  cursorHidden: false,
+  cursorSmoothing: false,
   recordingMode: 'single',
   recordingContainer: 'mp4',
   webcamZoom: 1,

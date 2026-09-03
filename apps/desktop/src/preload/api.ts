@@ -116,6 +116,11 @@ export interface NovaRecApi {
 
   addMarker(payload: IpcRequest<'recording:marker'>): Promise<IpcResponse<'recording:marker'>>;
   freeSpace(): Promise<IpcResponse<'recording:freeSpace'>>;
+  startCursorTracking(): Promise<IpcResponse<'cursor:start'>>;
+  stopCursorTracking(): Promise<IpcResponse<'cursor:stop'>>;
+  onCursorSample(
+    callback: (sample: { x: number; y: number; clicked: boolean }) => void,
+  ): () => void;
 
   // --- Phone camera over Wi-Fi ---
   startPhoneSession(payload?: IpcRequest<'phone:start'>): Promise<IpcResponse<'phone:start'>>;

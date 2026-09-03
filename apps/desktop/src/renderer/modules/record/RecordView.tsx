@@ -30,6 +30,8 @@ import { MicMeter } from './MicMeter.js';
 import { CameraSelect } from './CameraSelect.js';
 import { PHONE_WIFI_DEVICE_ID, isPhoneWifiDevice } from '@novarec/capture';
 import {
+  DEFAULT_HOTKEYS,
+  humanizeAccelerator,
   MKV_COPY_PRESET_ID,
   MP4_COPY_PRESET_ID,
   type RecordingContainer,
@@ -71,6 +73,14 @@ export function RecordView(): ReactElement {
   const [micDeviceId, setMicDeviceId] = useState<string | null>(null);
   const [webcamShape, setWebcamShape] = useState<WebcamShape>('circle');
   const [webcamSize, setWebcamSize] = useState(240);
+  const [cursorZoomEnabled, setCursorZoomEnabled] = useState(true);
+  const [cursorZoomScale, setCursorZoomScale] = useState(2);
+  const [cursorHighlight, setCursorHighlight] = useState(false);
+  const [cursorClickEffects, setCursorClickEffects] = useState(false);
+  const [cursorHidden, setCursorHidden] = useState(false);
+  const [cursorSmoothing, setCursorSmoothing] = useState(false);
+  const [clickTrackingAvailable, setClickTrackingAvailable] = useState(true);
+  const [zoomedIn, setZoomedIn] = useState(false);
   const [recordingMode, setRecordingMode] = useState<RecordingMode>('single');
   const [recordingContainer, setRecordingContainer] = useState<RecordingContainer>('mp4');
   const [webcamStatus, setWebcamStatus] = useState<{ state: string; message: string } | null>(null);
@@ -131,6 +141,11 @@ export function RecordView(): ReactElement {
   // A region only means something for a screen capture: a window source already
   // is its own crop, and its frames aren't in display coordinates.
   const regionApplies = REGION_CAPTURE_ENABLED && region !== null && capturedDisplay !== null;
+  // Any effect on means the screen goes through the effects canvas. The frame
+  // it maps the pointer into is the REGION when one is cropped, not the display.
+  const cursorEffectsActive =
+    cursorZoomEnabled || cursorHighlight || cursorClickEffects || cursorHidden || cursorSmoothing;
+
   const screenRegion = useMemo<RegionSpec | null>(
     () =>
       region && capturedDisplay
@@ -172,6 +187,12 @@ export function RecordView(): ReactElement {
     setRegion(s.region);
     setRecordingMode(s.recordingMode);
     setRecordingContainer(s.recordingContainer);
+    setCursorZoomEnabled(s.cursorZoomEnabled);
+    setCursorZoomScale(s.cursorZoomScale);
+    setCursorHighlight(s.cursorHighlight);
+    setCursorClickEffects(s.cursorClickEffects);
+    setCursorHidden(s.cursorHidden);
+    setCursorSmoothing(s.cursorSmoothing);
     if (appSettings.data.retainSetup) {
       setSelectedSourceId(s.sourceId);
       setCameraOn(s.cameraOn);
@@ -201,6 +222,12 @@ export function RecordView(): ReactElement {
         region,
         recordingMode,
         recordingContainer,
+        cursorZoomEnabled,
+        cursorZoomScale,
+        cursorHighlight,
+        cursorClickEffects,
+        cursorHidden,
+        cursorSmoothing,
         sourceId: selectedSourceId,
         cameraOn,
         micOn,
@@ -219,6 +246,12 @@ export function RecordView(): ReactElement {
     region,
     recordingMode,
     recordingContainer,
+    cursorZoomEnabled,
+    cursorZoomScale,
+    cursorHighlight,
+    cursorClickEffects,
+    cursorHidden,
+    cursorSmoothing,
     selectedSourceId,
     cameraOn,
     micOn,
@@ -325,9 +358,22 @@ export function RecordView(): ReactElement {
     const configs = buildTrackConfigs();
     // Only pass the region when it can actually be applied; a window capture
     // must never be started with a crop it would ignore.
+    const effectsBounds = regionApplies && region ? region.rect : (capturedDisplay?.bounds ?? null);
     const options = {
       screenRegion: regionApplies ? screenRegion : null,
       singleFile: recordingMode === 'single',
+      cursorEffects:
+        cursorEffectsActive && effectsBounds
+          ? {
+              displayBounds: effectsBounds,
+              fps: targetFps,
+              zoomScale: cursorZoomScale,
+              highlight: cursorHighlight,
+              clickEffects: cursorClickEffects,
+              drawCursor: cursorHidden,
+              smoothing: cursorSmoothing,
+            }
+          : null,
     };
     // The phone stream is already acquired; hand it to the recorder rather than
     // letting it try to open a device that does not exist locally.
@@ -458,6 +504,23 @@ export function RecordView(): ReactElement {
     if (!cameraOn) setWebcamStatus(null);
   }, [cameraOn]);
 
+  // Track the pointer only while a recording is live — it is a 60Hz sample and
+  // a global hook, neither of which should run when nothing is being recorded.
+  useEffect(() => {
+    if (recorder.state === 'idle' || !cursorEffectsActive) return undefined;
+    void window.novarec
+      .startCursorTracking()
+      .then((r) => setClickTrackingAvailable(r.clickTracking))
+      .catch(() => undefined);
+    return () => {
+      void window.novarec.stopCursorTracking().catch(() => undefined);
+    };
+  }, [recorder.state, cursorEffectsActive]);
+
+  useEffect(() => {
+    if (recorder.state === 'idle') setZoomedIn(false);
+  }, [recorder.state]);
+
   // Always tear the overlay down when leaving Record.
   useEffect(() => () => void window.novarec.hideWebcam(), []);
 
@@ -513,11 +576,23 @@ export function RecordView(): ReactElement {
       recorder.setMicMuted(next);
     } else if (action === 'marker') {
       if (recorder.state !== 'idle') recorder.addMarker();
+    } else if (action === 'cursorZoomNow') {
+      if (recorder.state !== 'idle' && cursorZoomEnabled) {
+        setZoomedIn((on) => {
+          recorder.setZoomed(!on);
+          return !on;
+        });
+      }
     } else if (action === 'panicStop') {
       void recorder.stop();
     }
   };
   useEffect(() => window.novarec.onHotkey((action) => hotkeyHandler.current(action)), []);
+
+  const zoomShortcut = humanizeAccelerator(
+    DEFAULT_HOTKEYS.find((h) => h.action === 'cursorZoomNow')?.accelerator ?? '',
+    info.data?.platform ?? 'win32',
+  );
 
   const heroSummary = useMemo<HeroSummary>(() => {
     const extras: string[] = [];
@@ -573,6 +648,8 @@ export function RecordView(): ReactElement {
           recorder={recorder}
           canStart={canRecord && recorder.state === 'idle' && countdown === null}
           onStart={beginRecording}
+          zoomed={zoomedIn}
+          zoomShortcut={zoomShortcut}
         />
       </div>
 
@@ -808,6 +885,67 @@ export function RecordView(): ReactElement {
             <span className="text-app2">Settings → Performance</span>.
           </p>
 
+          <SectionLabel className="mt-5">Cursor &amp; zoom</SectionLabel>
+          <div className="space-y-2.5">
+            <CursorToggle
+              label="Zoom to cursor"
+              hint={`Press ${zoomShortcut} while recording to zoom toward the pointer, again to zoom out.`}
+              checked={cursorZoomEnabled}
+              onChange={setCursorZoomEnabled}
+            />
+            {cursorZoomEnabled && (
+              <label className="block pl-1">
+                <span className="mb-1 flex items-center justify-between text-xs text-muted-app">
+                  <span>Zoom amount</span>
+                  <span>{cursorZoomScale.toFixed(1)}×</span>
+                </span>
+                <input
+                  type="range"
+                  min={1.2}
+                  max={4}
+                  step={0.1}
+                  value={cursorZoomScale}
+                  onChange={(e) => setCursorZoomScale(Number(e.target.value))}
+                  className="w-full accent-blue-500"
+                />
+              </label>
+            )}
+            <CursorToggle
+              label="Highlight the cursor"
+              hint="A soft ring follows the pointer so viewers can track it."
+              checked={cursorHighlight}
+              onChange={setCursorHighlight}
+            />
+            <CursorToggle
+              label="Click effects"
+              hint={
+                clickTrackingAvailable
+                  ? 'A ripple marks each click.'
+                  : 'Unavailable on this machine — the global mouse hook did not load.'
+              }
+              checked={cursorClickEffects && clickTrackingAvailable}
+              disabled={!clickTrackingAvailable}
+              onChange={setCursorClickEffects}
+            />
+            <CursorToggle
+              label="Hide the real cursor"
+              hint="Leaves the system pointer out of the capture and draws a clean one instead."
+              checked={cursorHidden}
+              onChange={setCursorHidden}
+            />
+            <CursorToggle
+              label="Smooth cursor motion"
+              hint={
+                cursorHidden
+                  ? 'Eases the pointer so quick movement looks deliberate.'
+                  : 'Needs “Hide the real cursor” — a pointer burned into the captured pixels cannot be eased.'
+              }
+              checked={cursorSmoothing && cursorHidden}
+              disabled={!cursorHidden}
+              onChange={setCursorSmoothing}
+            />
+          </div>
+
           <SectionLabel className="mt-5">Save as</SectionLabel>
           <div className="flex flex-wrap gap-2">
             <FormatOption
@@ -963,6 +1101,47 @@ function SectionLabel({
     </label>
   );
 }
+
+/** A labelled switch with an explanation — these options are not self-evident. */
+const CursorToggle = memo(function CursorToggle({
+  label,
+  hint,
+  checked,
+  disabled = false,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (value: boolean) => void;
+}): ReactElement {
+  return (
+    <div className={`flex items-start justify-between gap-4 ${disabled ? 'opacity-60' : ''}`}>
+      <div className="min-w-0">
+        <div className="text-sm text-app2">{label}</div>
+        <div className="mt-0.5 text-xs leading-relaxed text-muted-app">{hint}</div>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition ${
+          checked ? 'bg-blue-600' : 'bg-surface2'
+        } ${disabled ? 'cursor-not-allowed' : ''}`}
+      >
+        <span
+          className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${
+            checked ? 'left-[22px]' : 'left-0.5'
+          }`}
+        />
+      </button>
+    </div>
+  );
+});
 
 /** How the take is saved, as explicit choices rather than a buried setting. */
 const FormatOption = memo(function FormatOption({

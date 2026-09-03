@@ -1,5 +1,46 @@
 # Release notes
 
+## 0.0.50 — zoom to the cursor while recording, and cursor effects
+
+These controls did not exist. There was a tested zoom engine in the codebase
+that had never been connected to anything, and a shortcut listed in Settings
+that did nothing. Now there is a **Cursor & zoom** section on the Record page.
+
+### Zoom toward the pointer, mid-recording
+
+Press **Ctrl+Shift+Z** while recording and the capture zooms toward your cursor,
+easing rather than cutting, and following as you move. Press it again to zoom
+out. The zoom amount is adjustable from 1.2× to 4×.
+
+It is baked into the recording, as you asked — what you see is what the file
+contains. While it is active the controls show a **Zoomed** badge, because
+otherwise a zoomed recording is invisible from the app window.
+
+### Cursor effects
+
+- **Highlight the cursor** — a soft ring follows the pointer.
+- **Click effects** — a ripple marks each click. This needs a global mouse hook;
+  where it cannot load, the option is disabled and says so rather than silently
+  doing nothing.
+- **Hide the real cursor** — leaves the system pointer out of the capture and
+  draws a clean one instead.
+- **Smooth cursor motion** — eases the pointer so quick movement looks
+  deliberate. It requires hiding the real cursor, and says so: a pointer burned
+  into the captured pixels cannot be eased afterwards.
+
+The easing is half-life based, so it glides identically at 24fps and 60fps
+instead of snapping at one and crawling at the other. The zoom region is clamped
+to the frame, so zooming near an edge slides the view rather than exposing black
+bands. Both are unit-tested.
+
+### A correction
+
+0.0.42's notes said `Ctrl+Shift+A` (annotate) and `Ctrl+Shift+Z` (cursor zoom)
+had been unbound because nothing implemented them. **That change never actually
+landed** — the file was never modified, and both shortcuts stayed registered
+system-wide doing nothing, for eight releases. `Ctrl+Shift+Z` now genuinely
+works. `Ctrl+Shift+A` is now genuinely unbound, and this time it is verified.
+
 ## 0.0.49 — says what the spinning camera is actually waiting for
 
 The endless spinner turned out not to be NovaRec at all. Windows' phone

@@ -10,3 +10,4 @@ export * from './cursor-zoom.js';
 export * from './redaction.js';
 export * from './markers.js';
 export * from './annotation.js';
+export * from './cursor-live.js';

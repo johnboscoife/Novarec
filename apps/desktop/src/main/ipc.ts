@@ -19,6 +19,11 @@ import {
 import { getDisplays, listSources } from './capture/enumerate.js';
 import { beginRegionSelect } from './capture/region-window.js';
 import {
+  clickTrackingAvailable,
+  startCursorTracking,
+  stopCursorTracking,
+} from './capture/cursor-tracker.js';
+import {
   addDesktopCandidate,
   setPhoneAnswer,
   startPhoneSession,
@@ -199,6 +204,17 @@ export function registerIpcHandlers(): void {
   handleChannel('recording:stop', (req) => stopRecording(req.recordingId, req.atMs));
   handleChannel('recording:marker', async (req) => {
     await addMarker(req.recordingId, req.marker);
+    return { ok: true as const };
+  });
+  handleChannel('cursor:start', (_req, event) => {
+    const sender = event.sender;
+    startCursorTracking((sample) => {
+      if (!sender.isDestroyed()) sender.send('cursor:sample', sample);
+    });
+    return { clickTracking: clickTrackingAvailable() };
+  });
+  handleChannel('cursor:stop', () => {
+    stopCursorTracking();
     return { ok: true as const };
   });
   handleChannel('recording:freeSpace', () => vaultFreeSpace());

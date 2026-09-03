@@ -21,6 +21,8 @@ export interface RecorderControls {
   resume(): Promise<void>;
   stop(): Promise<void>;
   setMicMuted(muted: boolean): void;
+  /** Zoom the capture toward the pointer, or back out. */
+  setZoomed(zoomed: boolean): void;
   /** Bookmark the current moment; becomes a chapter in the export. */
   addMarker(label?: string): void;
   /** How many markers this take has, for the UI. */
@@ -134,6 +136,10 @@ export function useRecorder(): RecorderControls {
     recorderRef.current?.setMicMuted(muted);
   }, []);
 
+  const setZoomed = useCallback((zoomed: boolean) => {
+    recorderRef.current?.setZoomed(zoomed);
+  }, []);
+
   /**
    * Bookmark the current moment. Timed from the same clock the segment
    * durations use, so the marker lands where the user actually pressed it —
@@ -169,6 +175,7 @@ export function useRecorder(): RecorderControls {
     resume,
     stop,
     setMicMuted,
+    setZoomed,
     addMarker,
     markerCount,
   };

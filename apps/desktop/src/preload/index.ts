@@ -79,6 +79,16 @@ const api: NovaRecApi = {
 
   addMarker: (payload) => ipcRenderer.invoke('recording:marker', payload),
   freeSpace: () => ipcRenderer.invoke('recording:freeSpace'),
+  startCursorTracking: () => ipcRenderer.invoke('cursor:start'),
+  stopCursorTracking: () => ipcRenderer.invoke('cursor:stop'),
+  onCursorSample: (callback) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      sample: { x: number; y: number; clicked: boolean },
+    ): void => callback(sample);
+    ipcRenderer.on('cursor:sample', listener);
+    return () => ipcRenderer.removeListener('cursor:sample', listener);
+  },
 
   // --- Phone camera over Wi-Fi ---
   startPhoneSession: (payload) => ipcRenderer.invoke('phone:start', payload),

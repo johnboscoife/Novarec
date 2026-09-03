@@ -29,7 +29,10 @@ export const DEFAULT_HOTKEYS: HotkeyMap = [
   { action: 'startStop', accelerator: 'CommandOrControl+Shift+R' },
   { action: 'pauseResume', accelerator: 'CommandOrControl+Shift+P' },
   { action: 'marker', accelerator: 'CommandOrControl+Shift+M' },
-  { action: 'annotateToggle', accelerator: 'CommandOrControl+Shift+A' },
+  // `annotateToggle` is deliberately UNBOUND: nothing implements it, and
+  // registering a system-wide shortcut that silently does nothing takes the
+  // combination away from every other app while telling the user it works.
+  // `cursorZoomNow` IS bound — it zooms the capture toward the pointer.
   { action: 'cursorZoomNow', accelerator: 'CommandOrControl+Shift+Z' },
   { action: 'muteMic', accelerator: 'CommandOrControl+Shift+U' },
   { action: 'panicStop', accelerator: 'CommandOrControl+Shift+Escape' },
