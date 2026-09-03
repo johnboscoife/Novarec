@@ -201,6 +201,11 @@ export const ipcContract = {
   // pushes `cursor:sample` events; the renderer maps them onto the frame.
   'cursor:start': { request: z.void(), response: z.object({ clickTracking: z.boolean() }) },
   'cursor:stop': { request: z.void(), response: Ok },
+  // Save a still frame from the live capture next to the recordings.
+  'recording:snapshot': {
+    request: z.object({ bytes: Bytes }),
+    response: z.object({ path: z.string() }),
+  },
   'recording:listOrphans': { request: z.void(), response: z.array(OrphanedRecordingSchema) },
   'recording:recover': { request: z.object({ dir: z.string() }), response: RecoveryResultSchema },
   // Open the recordings vault (raw segments + recovered files) in the OS.

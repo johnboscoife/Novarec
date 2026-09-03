@@ -79,6 +79,7 @@ const api: NovaRecApi = {
 
   addMarker: (payload) => ipcRenderer.invoke('recording:marker', payload),
   freeSpace: () => ipcRenderer.invoke('recording:freeSpace'),
+  saveSnapshot: (payload) => ipcRenderer.invoke('recording:snapshot', payload),
   startCursorTracking: () => ipcRenderer.invoke('cursor:start'),
   stopCursorTracking: () => ipcRenderer.invoke('cursor:stop'),
   onCursorSample: (callback) => {

@@ -81,12 +81,17 @@ export function ControlsOverlay(): ReactElement {
             {st.zoomed ? '🔎' : '🔍'}
           </PillButton>
         )}
+        <PillButton label="Save a snapshot of the screen" onClick={() => send('snapshot')}>
+          📷
+        </PillButton>
+        {/* Was 📷, which reads as "take a photo" — someone reaching for a
+            snapshot toggled their webcam off mid-recording instead. */}
         <PillButton
-          label={st.webcamOn ? 'Hide webcam' : 'Show webcam'}
+          label={st.webcamOn ? 'Turn camera off' : 'Turn camera on'}
           active={!st.webcamOn}
           onClick={() => send('toggleWebcam')}
         >
-          {st.webcamOn ? '📷' : '🚫'}
+          {st.webcamOn ? '🎥' : '🚷'}
         </PillButton>
       </div>
 

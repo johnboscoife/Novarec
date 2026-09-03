@@ -82,6 +82,7 @@ export function RecordView(): ReactElement {
   const [cursorSmoothing, setCursorSmoothing] = useState(false);
   const [clickTrackingAvailable, setClickTrackingAvailable] = useState(true);
   const [zoomedIn, setZoomedIn] = useState(false);
+  const [snapshotPath, setSnapshotPath] = useState<string | null>(null);
   const [recordingQuality, setRecordingQuality] = useState<RecordingQuality>('high');
   const [recordingMode, setRecordingMode] = useState<RecordingMode>('single');
   const [recordingContainer, setRecordingContainer] = useState<RecordingContainer>('mp4');
@@ -580,6 +581,11 @@ export function RecordView(): ReactElement {
       setCameraOn((on) => !on);
     } else if (action === 'toggleZoom') {
       toggleZoom();
+    } else if (action === 'snapshot') {
+      void recorder
+        .snapshot()
+        .then((path) => setSnapshotPath(path))
+        .catch(() => undefined);
     }
   };
   useEffect(() => window.novarec.onControlsAction((action) => controlHandler.current(action)), []);
@@ -683,6 +689,31 @@ export function RecordView(): ReactElement {
           zoomShortcut={zoomShortcut}
         />
       </div>
+
+      {snapshotPath && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-app bg-surface p-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">Snapshot saved</p>
+            <p className="truncate text-xs text-muted-app">{snapshotPath}</p>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={() => void window.novarec.revealPath({ path: snapshotPath })}
+              className="rounded-lg bg-surface2 px-3 py-2 text-sm text-app2 transition hover:text-app"
+            >
+              Show in folder
+            </button>
+            <button
+              type="button"
+              onClick={() => setSnapshotPath(null)}
+              className="rounded-lg bg-surface2 px-3 py-2 text-sm text-muted-app transition hover:text-app2"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       {recorder.state === 'idle' && recorder.lastRecordingDir && (
         <div className="mt-4 rounded-2xl border border-app bg-surface p-4">

@@ -38,6 +38,7 @@ export const ControlActionSchema = z.enum([
   'stop',
   'dismiss',
   'toggleZoom',
+  'snapshot',
   'muteMic',
   'toggleWebcam',
 ]);

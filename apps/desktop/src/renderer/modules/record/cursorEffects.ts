@@ -40,6 +40,9 @@ const CURSOR_HALF_LIFE_MS = 45;
 const RIPPLE_MS = 450;
 const RIPPLE_MAX_RADIUS = 44;
 const RING_RADIUS = 26;
+/** How often to check the draw loop is alive, and how stale is too stale. */
+const WATCHDOG_INTERVAL_MS = 500;
+const WATCHDOG_MIN_STALL_MS = 1000;
 
 function toEven(value: number): number {
   return Math.max(2, Math.floor(value / 2) * 2);
@@ -62,6 +65,9 @@ export class CursorEffectsStream {
    * effects are abandoned and the plain frame is drawn instead. */
   private failures = 0;
   private effectsDisabled = false;
+  /** Independent of the draw loop, so it can notice the draw loop dying. */
+  private watchdog: number | null = null;
+  private periodMs = 33;
 
   private constructor(
     private readonly video: HTMLVideoElement,
@@ -111,6 +117,20 @@ export class CursorEffectsStream {
     return effects;
   }
 
+  /**
+   * A PNG of the frame currently being recorded — effects and all, so the
+   * snapshot matches the video rather than being a separate view of the screen.
+   */
+  snapshot(): Promise<Blob | null> {
+    return new Promise((resolve) => {
+      try {
+        this.canvas.toBlob((blob) => resolve(blob), 'image/png');
+      } catch {
+        resolve(null);
+      }
+    });
+  }
+
   /** Zoom in toward the pointer, or back out. Eased, never a jump cut. */
   setZoomed(zoomed: boolean): void {
     this.targetScale = zoomed ? Math.max(1, this.options.zoomScale) : 1;
@@ -142,10 +162,27 @@ export class CursorEffectsStream {
     this.easedFocus = this.rawCursor;
     this.lastDrawAt = performance.now();
 
-    const periodMs = Math.max(1, Math.round(1000 / Math.max(1, this.options.fps)));
+    this.periodMs = Math.max(1, Math.round(1000 / Math.max(1, this.options.fps)));
     void this.video.play().catch(() => undefined);
     this.draw();
-    this.timer = window.setInterval(() => this.draw(), periodMs);
+    this.timer = window.setInterval(() => this.draw(), this.periodMs);
+
+    // A SECOND timer, watching the first. This canvas is the recording: if its
+    // draw loop stops for any reason, the video freezes on its last frame and
+    // nothing inside that loop can notice, because the loop is what stopped.
+    // Restarting it turns a dead recording into a brief stutter.
+    this.watchdog = window.setInterval(() => {
+      if (this.stopped) return;
+      const since = performance.now() - this.lastDrawAt;
+      if (since < Math.max(WATCHDOG_MIN_STALL_MS, this.periodMs * 10)) return;
+      if (this.timer !== null) window.clearInterval(this.timer);
+      // Reset the clock so the restarted loop does not see a huge delta and
+      // snap the easing.
+      this.lastDrawAt = performance.now();
+      this.timer = window.setInterval(() => this.draw(), this.periodMs);
+      void this.video.play().catch(() => undefined);
+      this.drawPlainFrame();
+    }, WATCHDOG_INTERVAL_MS);
   }
 
   /**
@@ -274,6 +311,10 @@ export class CursorEffectsStream {
     if (this.timer !== null) {
       window.clearInterval(this.timer);
       this.timer = null;
+    }
+    if (this.watchdog !== null) {
+      window.clearInterval(this.watchdog);
+      this.watchdog = null;
     }
     // Only the canvas stream is ours; the source belongs to the recorder.
     this.stream.getTracks().forEach((t) => t.stop());

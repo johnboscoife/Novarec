@@ -56,7 +56,7 @@ import {
   writeFragment,
   writeInit,
 } from './recording/session.js';
-import { runExport } from './recording/export.js';
+import { runExport, saveSnapshot } from './recording/export.js';
 import { listHistory, removeHistory, renameHistory } from './export-history-store.js';
 import {
   loadAppSettings,
@@ -217,6 +217,7 @@ export function registerIpcHandlers(): void {
     stopCursorTracking();
     return { ok: true as const };
   });
+  handleChannel('recording:snapshot', (req) => saveSnapshot(req.bytes));
   handleChannel('recording:freeSpace', () => vaultFreeSpace());
   handleChannel('recording:listOrphans', () => listOrphans());
   handleChannel('recording:recover', (req) => recover(req.dir));

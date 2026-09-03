@@ -166,3 +166,15 @@ async function doExport(
 
   return { outputPath, durationMs };
 }
+
+/**
+ * Save a still frame from the live capture. It goes to the same folder as
+ * exports, because that is where the user already looks for what NovaRec
+ * produced — a snapshot buried in the app data folder is a snapshot lost.
+ */
+export async function saveSnapshot(bytes: Uint8Array): Promise<{ path: string }> {
+  const folder = await destinationFolder();
+  const path = await uniqueOutputPath(folder, 'png');
+  await writeFile(path, bytes);
+  return { path };
+}

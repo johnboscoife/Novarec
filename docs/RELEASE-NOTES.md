@@ -1,5 +1,34 @@
 # Release notes
 
+## 0.0.53 — a real snapshot button, and the freeze behind it
+
+### That button was not a snapshot button
+
+The floating controller showed **📷**, which reads as "take a photo" to anyone.
+It toggled the webcam. Reaching for a snapshot turned the camera off
+mid-recording instead — and then the recording froze.
+
+- There is now an actual **snapshot button** on the controller. It saves a PNG
+  of the frame being recorded — effects, zoom and all, so the still matches the
+  video rather than being a separate view of the screen — into the same folder
+  as your exports, and the app offers to show it in the folder.
+- The camera toggle now shows 🎥 / 🚷 and reads "Turn camera on/off", so it
+  cannot be mistaken for a shutter.
+
+### And the freeze
+
+A capture that goes through NovaRec's own canvas — which is now most of them,
+since zoom is on by default — always produces frames, because the canvas is
+drawn on a timer. If that timer stops, the video freezes on its last frame and
+**nothing inside the loop can notice, because the loop is what stopped.**
+
+- The draw loop now has a **second, independent watchdog** that restarts it if
+  it goes quiet. A dead recording becomes a brief stutter instead.
+- Stall detection is restored for canvas-sourced video. It had been switched off
+  for all video in 0.0.36, correctly at the time: raw screen capture is
+  change-driven, so a still screen legitimately goes quiet. A canvas does not,
+  so silence there is a real fault and is treated as one again.
+
 ## 0.0.52 — much better picture quality, and zoom on the floating controller
 
 ### Recordings were capped at about 2.5 Mbps. All of them.

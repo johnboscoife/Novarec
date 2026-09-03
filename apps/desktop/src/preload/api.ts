@@ -116,6 +116,9 @@ export interface NovaRecApi {
 
   addMarker(payload: IpcRequest<'recording:marker'>): Promise<IpcResponse<'recording:marker'>>;
   freeSpace(): Promise<IpcResponse<'recording:freeSpace'>>;
+  saveSnapshot(
+    payload: IpcRequest<'recording:snapshot'>,
+  ): Promise<IpcResponse<'recording:snapshot'>>;
   startCursorTracking(): Promise<IpcResponse<'cursor:start'>>;
   stopCursorTracking(): Promise<IpcResponse<'cursor:stop'>>;
   onCursorSample(

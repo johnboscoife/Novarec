@@ -23,6 +23,8 @@ export interface RecorderControls {
   setMicMuted(muted: boolean): void;
   /** Zoom the capture toward the pointer, or back out. */
   setZoomed(zoomed: boolean): void;
+  /** Save a still of the frame being recorded; resolves with its path. */
+  snapshot(): Promise<string | null>;
   /** Bookmark the current moment; becomes a chapter in the export. */
   addMarker(label?: string): void;
   /** How many markers this take has, for the UI. */
@@ -140,6 +142,14 @@ export function useRecorder(): RecorderControls {
     recorderRef.current?.setZoomed(zoomed);
   }, []);
 
+  const snapshot = useCallback(async (): Promise<string | null> => {
+    const blob = await (recorderRef.current?.snapshot() ?? Promise.resolve(null));
+    if (!blob) return null;
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const { path } = await window.novarec.saveSnapshot({ bytes });
+    return path;
+  }, []);
+
   /**
    * Bookmark the current moment. Timed from the same clock the segment
    * durations use, so the marker lands where the user actually pressed it —
@@ -176,6 +186,7 @@ export function useRecorder(): RecorderControls {
     stop,
     setMicMuted,
     setZoomed,
+    snapshot,
     addMarker,
     markerCount,
   };

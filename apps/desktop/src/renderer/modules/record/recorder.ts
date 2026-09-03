@@ -186,6 +186,12 @@ class TrackRecorder {
     private readonly ownsStream = true,
     private readonly quality: RecordingQuality = 'high',
     private readonly targetFps = 30,
+    /**
+     * The video comes from one of our own canvases, which is drawn on a steady
+     * tick and therefore ALWAYS produces frames. Raw screen capture does not —
+     * it is change-driven, so a still screen legitimately goes quiet.
+     */
+    private readonly steadySource = false,
   ) {}
 
   start(): void {
@@ -235,7 +241,12 @@ class TrackRecorder {
         );
         return;
       }
-      if (!hasVideo && performance.now() - this.lastChunkAt > STALL_TIMEOUT_MS) {
+      // Meaningful again for a canvas source: silence there is a real fault,
+      // not a still screen.
+      if (
+        (!hasVideo || this.steadySource) &&
+        performance.now() - this.lastChunkAt > STALL_TIMEOUT_MS
+      ) {
         this.stalled = true;
         this.onError(
           `${this.label} stopped producing data — the capture source may have stalled. ` +
@@ -488,6 +499,8 @@ export class MultiTrackRecorder {
    * is how a camera ends up dead after one take.
    */
   private ownedStreams: MediaStream[] = [];
+  /** True when the recorded video comes from one of our canvases. */
+  private steadyVideo = false;
   private quality: RecordingQuality = 'high';
   private fps = 30;
   // Recorded-elapsed clock. The manifest's segment offsets are cumulative
@@ -512,6 +525,7 @@ export class MultiTrackRecorder {
 
     this.quality = options?.quality ?? 'high';
     this.fps = targetFps;
+    this.steadyVideo = false;
     const singleFile = options?.singleFile === true;
     // In single-file mode main is told about ONE track, so it creates one
     // folder whose finalized file already IS the finished recording.
@@ -566,6 +580,7 @@ export class MultiTrackRecorder {
           if (cropped) {
             this.croppedScreens.push(cropped);
             stream = cropped.stream;
+            this.steadyVideo = true;
           } else {
             stream = raw; // region covers the whole display — nothing to crop
           }
@@ -596,6 +611,7 @@ export class MultiTrackRecorder {
             this.cursorEffects = effects;
             this.ownedStreams.push(stream);
             stream = effects.stream;
+            this.steadyVideo = true;
           } catch (error) {
             const reason = error instanceof Error ? error.message : 'unknown error';
             this.callbacks.onError(
@@ -625,6 +641,7 @@ export class MultiTrackRecorder {
           config.label,
           stream,
           false,
+          config.kind === 'screen' && this.steadyVideo,
         );
         recorder.start();
         this.tracks.push(recorder);
@@ -656,6 +673,7 @@ export class MultiTrackRecorder {
     label: string,
     stream: MediaStream,
     ownsStream = true,
+    steadySource = false,
   ): TrackRecorder {
     return new TrackRecorder(
       recordingId,
@@ -670,6 +688,7 @@ export class MultiTrackRecorder {
       ownsStream,
       this.quality,
       this.fps,
+      steadySource,
     );
   }
 
@@ -707,6 +726,7 @@ export class MultiTrackRecorder {
         );
         this.composited = composited;
         video = composited.stream.getVideoTracks();
+        this.steadyVideo = true;
       } catch (error) {
         // Compositing failed: record the screen rather than nothing, and say so
         // instead of quietly producing a take without the camera in it. The
@@ -743,6 +763,11 @@ export class MultiTrackRecorder {
     );
     recorder.start();
     this.tracks.push(recorder);
+  }
+
+  /** A still of the frame being recorded, or null when there is nothing to grab. */
+  snapshot(): Promise<Blob | null> {
+    return this.cursorEffects?.snapshot() ?? Promise.resolve(null);
   }
 
   /** Zoom the capture toward the pointer, or back out. No-op without effects. */
