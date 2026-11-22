@@ -725,6 +725,7 @@ export function RecordView(): ReactElement {
         <RecordingControls
           recorder={recorder}
           canStart={canRecord && recorder.state === 'idle' && countdown === null}
+          audioOnly={canRecord && selectedSourceId === null}
           onStart={beginRecording}
           zoomed={zoomedIn}
           zoomShortcut={zoomShortcut}

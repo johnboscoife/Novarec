@@ -105,10 +105,10 @@ export function useRecorder(): RecorderControls {
           setError(err instanceof Error ? err.message : 'Could not start recording');
           recorderRef.current = null;
           setState('idle');
-        } else {
-          // Cancelled mid-start and then failed: release whatever it acquired.
-          await recorder.stop().catch(() => undefined);
         }
+        // A start can fail after opening devices (the mic, before the screen
+        // failed): release whatever it acquired and close its session.
+        await recorder.stop().catch(() => undefined);
         return false;
       }
       // Starting takes seconds (the screen picker, waiting for first frames).

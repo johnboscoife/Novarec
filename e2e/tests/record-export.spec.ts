@@ -52,6 +52,8 @@ test('records the microphone and finishes a playable MP4', async () => {
     const mic = window.getByRole('switch', { name: 'Microphone', exact: true });
     await mic.click();
     await expect(mic).toHaveAttribute('aria-checked', 'true');
+    // No screen picked: the user is told before the take that it is audio only.
+    await expect(window.getByRole('note')).toContainText('record audio only');
 
     await window.getByRole('button', { name: 'Record', exact: true }).click();
     const stop = window.getByRole('button', { name: 'Stop', exact: true });

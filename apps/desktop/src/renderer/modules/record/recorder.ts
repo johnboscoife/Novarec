@@ -651,6 +651,20 @@ export class MultiTrackRecorder {
         acquired.push({ config, stream, owned });
       } catch (error) {
         const reason = error instanceof Error ? error.message : 'unknown error';
+        // The picture is the point of a screen recording. Carrying on without
+        // it produced an audio-only "video" that looked like a success, so a
+        // screen that can't be captured stops the take before it begins. A
+        // missing extra (camera, system audio) is still skipped.
+        if (config.kind === 'screen') {
+          throw new Error(
+            `Couldn't capture the screen, so nothing was recorded: ${reason}` +
+              (navigator.userAgent.includes('Mac')
+                ? ' — on macOS, allow NovaRec under System Settings → Privacy & Security → ' +
+                  'Screen & System Audio Recording, then quit and reopen NovaRec.'
+                : ''),
+            { cause: error },
+          );
+        }
         this.callbacks.onError(`Couldn't start ${config.label}: ${reason}`);
       }
     }
