@@ -14,6 +14,8 @@ export interface VideoGrant {
   canPublish: boolean;
   canSubscribe: boolean;
   canPublishData: boolean;
+  /** Host only: manage participants and the room itself. */
+  roomAdmin?: boolean;
 }
 
 export interface AccessTokenOptions {
@@ -29,10 +31,18 @@ function base64url(input: string): string {
   return Buffer.from(input).toString('base64url');
 }
 
-export function grantForRole(room: string, _role: RoomRole): VideoGrant {
-  // Publish/subscribe for everyone; host-only actions are enforced server-side
-  // by LiveKit, not by the token.
-  return { room, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true };
+export function grantForRole(room: string, role: RoomRole): VideoGrant {
+  // LiveKit enforces exactly what the token grants, so host-only powers
+  // (removing or muting participants, ending the room) must be IN the token.
+  // Everyone may publish and subscribe; only the host administers the room.
+  return {
+    room,
+    roomJoin: true,
+    canPublish: true,
+    canSubscribe: true,
+    canPublishData: true,
+    ...(role === 'host' ? { roomAdmin: true } : {}),
+  };
 }
 
 export function buildAccessToken(options: AccessTokenOptions, nowSeconds: number): string {
