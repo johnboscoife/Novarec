@@ -155,9 +155,11 @@ function createMainWindow(): BrowserWindow {
     window.webContents.reload();
   });
 
-  // External links open in the OS browser, never inside the app.
+  // External links open in the OS browser, never inside the app — and only
+  // http(s), like every other path to openExternal: a `file:`, `smb:` or custom
+  // protocol URL handed to the OS can launch programs or leak credentials.
   window.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
 
