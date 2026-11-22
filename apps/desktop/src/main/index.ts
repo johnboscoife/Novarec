@@ -16,6 +16,7 @@ import {
 import { loadAppSettings, saveAppSettings } from './app-settings-store.js';
 import { initAutoUpdate } from './auto-update.js';
 import { stopPhoneSession } from './phone/server.js';
+import { installLogging } from './logger.js';
 
 const isDev = !app.isPackaged;
 
@@ -24,6 +25,9 @@ const isDev = !app.isPackaged;
 // anything resolves `userData`; ignored by installed builds.
 const userDataOverride = process.env['NOVAREC_USER_DATA_DIR'];
 if (isDev && userDataOverride) app.setPath('userData', userDataOverride);
+
+// After the profile is settled, before anything can fail.
+installLogging();
 
 // Set once app.quit() has begun (menu quit, app.close() in tests, OS shutdown),
 // so the window 'close' handler doesn't re-prompt on a programmatic quit.

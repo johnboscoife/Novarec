@@ -46,6 +46,12 @@ export function useRecorder(): RecorderControls {
   const pausedAccumMs = useRef(0);
   const setRecordingActive = useAppStore((s) => s.setRecordingActive);
 
+  /** Show an error, and log it — the main process writes it to novarec.log. */
+  const reportError = useCallback((message: string): void => {
+    console.error(`[recorder] ${message}`);
+    setError(message);
+  }, []);
+
   useEffect(() => {
     if (state !== 'recording') return undefined;
     const id = window.setInterval(() => {
@@ -91,7 +97,7 @@ export function useRecorder(): RecorderControls {
       setMarkerCount(0);
       const recorder = new MultiTrackRecorder({
         onSegmentCount: (n) => setSegmentCount(n),
-        onError: (message) => setError(message),
+        onError: (message) => reportError(message),
       });
       recorderRef.current = recorder;
       startedAt.current = performance.now();
@@ -102,7 +108,7 @@ export function useRecorder(): RecorderControls {
         // Only report on the take that is still current; one already cancelled
         // by stop or unmount has nothing left to tell the user.
         if (recorderRef.current === recorder) {
-          setError(err instanceof Error ? err.message : 'Could not start recording');
+          reportError(err instanceof Error ? err.message : 'Could not start recording');
           recorderRef.current = null;
           setState('idle');
         }
@@ -147,7 +153,7 @@ export function useRecorder(): RecorderControls {
     } catch (err) {
       // Even if finalize reports an error, the UI must return to idle — the
       // sealed segments are already durable on disk and recoverable.
-      setError(err instanceof Error ? err.message : 'Stop encountered an error');
+      reportError(err instanceof Error ? err.message : 'Stop encountered an error');
     } finally {
       setState('idle');
     }

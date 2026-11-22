@@ -1,4 +1,4 @@
-import { app, dialog, ipcMain, shell } from 'electron';
+import { app, dialog, ipcMain, shell, systemPreferences } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
 import {
@@ -45,6 +45,7 @@ import {
   setStorageLocation,
 } from './app-state.js';
 import { nextPreviousLocations } from './recording/vault-path.js';
+import { writeLog } from './logger.js';
 import { buildAccessToken, grantForRoom } from './meet/livekit-token.js';
 import { loadCaptureSettings, saveCaptureSettings } from './settings-store.js';
 import {
@@ -90,8 +91,17 @@ function handleChannel<C extends IpcChannel>(
 ): void {
   const entry = ipcContract[channel];
   ipcMain.handle(channel, async (event: IpcMainInvokeEvent, raw: unknown) => {
-    const request = entry.request.parse(raw) as IpcRequest<C>;
-    return entry.response.parse(await handler(request, event));
+    try {
+      const request = entry.request.parse(raw) as IpcRequest<C>;
+      return entry.response.parse(await handler(request, event));
+    } catch (error) {
+      // Recorded so an error the user only glimpsed can be read later.
+      writeLog(
+        'error',
+        `[ipc ${channel}] ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw error;
+    }
   });
 }
 
@@ -264,6 +274,21 @@ export function registerIpcHandlers(): void {
   });
   handleChannel('phone:ice', (req) => {
     addDesktopCandidate(req.candidate);
+    return { ok: true as const };
+  });
+
+  handleChannel('system:screenAccess', () => ({
+    status:
+      process.platform === 'darwin' ? systemPreferences.getMediaAccessStatus('screen') : 'granted',
+  }));
+  handleChannel('system:openScreenSettings', async () => {
+    // A fixed, known settings URL — not caller-supplied, so it is exempt from
+    // the http(s)-only rule on shell:openExternal.
+    if (process.platform === 'darwin') {
+      await shell.openExternal(
+        'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
+      );
+    }
     return { ok: true as const };
   });
 

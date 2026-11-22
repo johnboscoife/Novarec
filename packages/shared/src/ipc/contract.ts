@@ -249,6 +249,17 @@ export const ipcContract = {
     response: Ok,
   },
 
+  // --- OS permissions ---
+  /** macOS Screen Recording permission ('granted' on other platforms). */
+  'system:screenAccess': {
+    request: z.void(),
+    response: z.object({
+      status: z.enum(['granted', 'denied', 'not-determined', 'restricted', 'unknown']),
+    }),
+  },
+  /** Open the OS page where Screen Recording is allowed (macOS only). */
+  'system:openScreenSettings': { request: z.void(), response: Ok },
+
   // --- App settings (Phase 10) ---
   'settings:get': { request: z.void(), response: AppSettingsSchema },
   'settings:save': { request: AppSettingsSchema, response: AppSettingsSchema },

@@ -27,6 +27,7 @@ import { RecoveryBanner } from './RecoveryBanner.js';
 import { DiskSpaceNotice } from './DiskSpaceNotice.js';
 import { SourcesErrorNotice } from './SourcesErrorNotice.js';
 import { SourcePrompt } from './SourcePrompt.js';
+import { ScreenPermissionDialog } from './ScreenPermissionDialog.js';
 import { RecordHero, type HeroSummary } from './RecordHero.js';
 import { MicMeter } from './MicMeter.js';
 import { CameraSelect } from './CameraSelect.js';
@@ -380,6 +381,22 @@ export function RecordView(): ReactElement {
   // selection has been applied (next render), hence the pending flag.
   const [sourcePromptOpen, setSourcePromptOpen] = useState(false);
   const [pendingStart, setPendingStart] = useState<'source' | 'audio' | null>(null);
+  const [screenPermissionNeeded, setScreenPermissionNeeded] = useState(false);
+
+  /**
+   * On macOS a screen or window can only be captured once the user has allowed
+   * Screen Recording; without it the take would start and immediately fail.
+   * 'not-determined' is let through: trying is what makes macOS ask.
+   */
+  async function screenCaptureAllowed(): Promise<boolean> {
+    const { status } = await window.novarec.screenAccess().catch(() => ({ status: 'unknown' }));
+    if (status === 'denied' || status === 'restricted') {
+      window.focus();
+      setScreenPermissionNeeded(true);
+      return false;
+    }
+    return true;
+  }
 
   function requestRecording(): void {
     if (recorder.state !== 'idle' || countdown !== null) return;
@@ -389,14 +406,20 @@ export function RecordView(): ReactElement {
       void sources.refetch(); // windows come and go; list what is open now
       return;
     }
-    beginRecording();
+    setPendingStart('source');
   }
 
   useEffect(() => {
     if (pendingStart === null) return;
     if (pendingStart === 'source' && selectedSourceId === null) return;
     setPendingStart(null);
-    beginRecording();
+    if (pendingStart === 'audio') {
+      beginRecording();
+      return;
+    }
+    void screenCaptureAllowed().then((allowed) => {
+      if (allowed) beginRecording();
+    });
     // beginRecording is recreated every render and reads current state.
   }, [pendingStart, selectedSourceId, region]);
 
@@ -1285,6 +1308,18 @@ export function RecordView(): ReactElement {
             setPendingStart('audio');
           }}
           onCancel={() => setSourcePromptOpen(false)}
+        />
+      )}
+
+      {screenPermissionNeeded && (
+        <ScreenPermissionDialog
+          audioOnlyAvailable={micOn || (systemAudioOn && isWindows)}
+          onAudioOnly={() => {
+            setScreenPermissionNeeded(false);
+            setSelectedSourceId(null);
+            setPendingStart('audio');
+          }}
+          onClose={() => setScreenPermissionNeeded(false)}
         />
       )}
     </section>

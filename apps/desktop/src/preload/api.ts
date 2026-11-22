@@ -74,6 +74,9 @@ export interface NovaRecApi {
   openExternal(
     payload: IpcRequest<'shell:openExternal'>,
   ): Promise<IpcResponse<'shell:openExternal'>>;
+  /** macOS Screen Recording permission; 'granted' elsewhere. */
+  screenAccess(): Promise<IpcResponse<'system:screenAccess'>>;
+  openScreenSettings(): Promise<IpcResponse<'system:openScreenSettings'>>;
   chooseExportFolder(
     payload: IpcRequest<'export:chooseFolder'>,
   ): Promise<IpcResponse<'export:chooseFolder'>>;
