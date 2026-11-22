@@ -160,6 +160,29 @@ describe('buildFfmpegArgs', () => {
     const args = buildFfmpegArgs(preset('youtube'), inputs, 'out.mp4');
     expect(flagValue(args, '-c:v')).toBe('h264_nvenc');
     expect(flagValue(args, '-cq:v')).toBe('18');
+    // Without -b:v 0 NVENC caps constant-quality at its default bitrate.
+    expect(flagValue(args, '-b:v')).toBe('0');
+    expect(flagValue(args, '-rc:v')).toBe('vbr');
+  });
+
+  it('never passes the video bitrate as the audio bitrate', () => {
+    const base: ExportSettings = {
+      container: 'mkv',
+      videoCodec: 'h264',
+      audioCodec: 'opus',
+      width: null,
+      height: null,
+      fps: null,
+      rateControl: { mode: 'cbr', bitrateKbps: 8000 },
+      hardwareEncode: false,
+    };
+    // libopus rejects anything over 512k; the 8000k video rate would fail.
+    expect(flagValue(buildFfmpegArgs(base, inputs, 'out.mkv'), '-b:a')).toBe('160k');
+    const aac = { ...base, container: 'mp4' as const, audioCodec: 'aac' as const };
+    expect(flagValue(buildFfmpegArgs(aac, inputs, 'out.mp4'), '-b:a')).toBe('192k');
+    // A lossless audio codec takes no bitrate at all.
+    const flac = { ...base, audioCodec: 'flac' as const };
+    expect(buildFfmpegArgs(flac, inputs, 'out.mkv')).not.toContain('-b:a');
   });
 
   it('emits an audio-only command with no video', () => {

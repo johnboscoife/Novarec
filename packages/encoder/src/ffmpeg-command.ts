@@ -81,7 +81,9 @@ function rateControlArgs(rc: RateControl, encoder: string): string[] {
     if (encoder.endsWith('_amf')) {
       return ['-rc', 'cqp', '-qp_i', String(rc.crf), '-qp_p', String(rc.crf)];
     }
-    return ['-cq:v', String(rc.crf)]; // nvenc + sensible default
+    // NVENC: constant-quality VBR. Without `-b:v 0` NVENC keeps its default
+    // bitrate as a ceiling, so a high-quality setting is silently capped.
+    return ['-rc:v', 'vbr', '-cq:v', String(rc.crf), '-b:v', '0'];
   }
   if (rc.mode === 'cbr') {
     const rate = `${rc.bitrateKbps}k`;
@@ -177,13 +179,35 @@ function videoCodecArgs(settings: ExportSettings, encoder: string): string[] {
   return out;
 }
 
+/** Audio bitrate for exports that carry video, per lossy codec (kbps). */
+const AUDIO_BITRATE_WITH_VIDEO_KBPS: Record<'aac' | 'opus' | 'mp3', number> = {
+  aac: 192,
+  opus: 160,
+  mp3: 192,
+};
+
+/** libopus refuses anything above 512 kbps; MP3 tops out at 320. */
+const MAX_AUDIO_BITRATE_KBPS: Record<'aac' | 'opus' | 'mp3', number> = {
+  aac: 512,
+  opus: 512,
+  mp3: 320,
+};
+
 function audioCodecArgs(settings: ExportSettings): string[] {
   if (settings.audioCodec === 'none') return ['-an'];
   if (settings.audioCodec === 'copy') return ['-c:a', 'copy'];
   const out = ['-c:a', AUDIO_ENCODERS[settings.audioCodec as Exclude<AudioCodec, 'none' | 'copy'>]];
-  if (settings.rateControl.mode !== 'crf' && settings.audioCodec !== 'flac') {
-    out.push('-b:a', `${settings.rateControl.bitrateKbps}k`);
-  }
+  if (settings.audioCodec === 'flac') return out; // lossless: no bitrate
+  const codec = settings.audioCodec as 'aac' | 'opus' | 'mp3';
+  // The rate control describes the VIDEO. Only an audio-only export (such as
+  // the MP3 preset) uses it for the audio; with video, passing the video
+  // bitrate through (8000k) makes libopus fail and the others clamp it.
+  const requested =
+    settings.videoCodec === 'none' && settings.rateControl.mode !== 'crf'
+      ? settings.rateControl.bitrateKbps
+      : AUDIO_BITRATE_WITH_VIDEO_KBPS[codec];
+  const kbps = Math.min(requested, MAX_AUDIO_BITRATE_KBPS[codec]);
+  out.push('-b:a', `${kbps}k`);
   return out;
 }
 
