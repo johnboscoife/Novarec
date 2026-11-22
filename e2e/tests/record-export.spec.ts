@@ -52,14 +52,29 @@ test('records the microphone and finishes a playable MP4', async () => {
     const mic = window.getByRole('switch', { name: 'Microphone', exact: true });
     await mic.click();
     await expect(mic).toHaveAttribute('aria-checked', 'true');
-    // No screen picked: the user is told before the take that it is audio only.
-    await expect(window.getByRole('note')).toContainText('record audio only');
-
+    // No screen picked: Record asks what to capture instead of silently
+    // recording sound alone.
     await window.getByRole('button', { name: 'Record', exact: true }).click();
+    const prompt = window.getByRole('dialog', { name: 'What do you want to record?' });
+    await expect(prompt).toBeVisible();
+    await expect(prompt.getByRole('tab', { name: 'Entire screen' })).toBeVisible();
+    await expect(prompt.getByRole('tab', { name: 'A window' })).toBeVisible();
+    await expect(prompt.getByRole('tab', { name: 'An area' })).toBeVisible();
+    await prompt.getByRole('button', { name: 'Record audio only' }).click();
+    await expect(prompt).toBeHidden();
     const stop = window.getByRole('button', { name: 'Stop', exact: true });
     // A 3-second countdown precedes the take.
     await expect(stop).toBeVisible({ timeout: 15_000 });
-    await window.waitForTimeout(4_000);
+    // The floating controller must have no native tooltips: those are OS
+    // windows outside its content protection, and they showed up in videos.
+    const isControls = (w: { url(): string }): boolean => w.url().includes('overlay=controls');
+    await expect.poll(() => app.windows().some(isControls), { timeout: 10_000 }).toBe(true);
+    const controls = app.windows().find(isControls);
+    if (!controls) throw new Error('floating controls did not open');
+    await expect(controls.getByRole('button', { name: 'Stop' })).toBeVisible();
+    expect(await controls.locator('[title]').count()).toBe(0);
+
+    await window.waitForTimeout(3_000);
     await stop.click();
 
     await expect(window.getByText('Recording saved')).toBeVisible({ timeout: 30_000 });

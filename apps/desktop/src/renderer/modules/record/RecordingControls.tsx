@@ -15,12 +15,6 @@ interface RecordingControlsProps {
   /** The capture is zoomed toward the pointer right now. */
   zoomed?: boolean;
   zoomShortcut?: string;
-  /**
-   * Nothing visual is selected, so a take would contain sound only. Said up
-   * front: an audio-only file that looks like a finished video is a nasty
-   * surprise after a long take.
-   */
-  audioOnly?: boolean;
 }
 
 export function RecordingControls({
@@ -29,7 +23,6 @@ export function RecordingControls({
   onStart,
   zoomed = false,
   zoomShortcut,
-  audioOnly = false,
 }: RecordingControlsProps): ReactElement {
   const { state, elapsedMs, segmentCount, error, markerCount } = recorder;
   const active = state !== 'idle';
@@ -137,12 +130,6 @@ export function RecordingControls({
         </div>
       </div>
 
-      {state === 'idle' && audioOnly && (
-        <p role="note" className="mt-3 text-sm text-amber-300">
-          No screen or window is selected, so this will record audio only. Choose one under “What to
-          capture” to record video.
-        </p>
-      )}
       {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
     </div>
   );

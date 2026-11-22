@@ -26,6 +26,7 @@ import { RecordingControls } from './RecordingControls.js';
 import { RecoveryBanner } from './RecoveryBanner.js';
 import { DiskSpaceNotice } from './DiskSpaceNotice.js';
 import { SourcesErrorNotice } from './SourcesErrorNotice.js';
+import { SourcePrompt } from './SourcePrompt.js';
 import { RecordHero, type HeroSummary } from './RecordHero.js';
 import { MicMeter } from './MicMeter.js';
 import { CameraSelect } from './CameraSelect.js';
@@ -296,16 +297,21 @@ export function RecordView(): ReactElement {
     [primeDevices],
   );
 
-  const selectRegion = useCallback(async (): Promise<void> => {
+  /** Resolves true once an area is picked AND the screen it is on is selected. */
+  const selectRegion = useCallback(async (): Promise<boolean> => {
     const picked = await window.novarec.beginRegionSelect();
-    if (!picked) return;
+    if (!picked) return false;
     setRegion(picked);
     // Point the capture at the display the area was drawn on, so the crop and
     // the captured frames can't disagree.
     if (picked.displayId !== null) {
       const owner = screens.find((s) => s.displayId === picked.displayId);
-      if (owner) setSelectedSourceId(owner.id);
+      if (owner) {
+        setSelectedSourceId(owner.id);
+        return true;
+      }
     }
+    return false;
   }, [screens]);
 
   const clearRegion = useCallback((): void => setRegion(null), []);
@@ -367,6 +373,49 @@ export function RecordView(): ReactElement {
   // The floating camera is baked into the screen recording, so it isn't a
   // standalone track — recording needs a screen/window or an audio source.
   const canRecord = selectedSourceId !== null || micOn || (systemAudioOn && isWindows);
+
+  // --- "What do you want to record?" ---
+  // Record with no screen or window chosen asks first, instead of quietly
+  // recording sound alone. A choice from the prompt starts the take once the
+  // selection has been applied (next render), hence the pending flag.
+  const [sourcePromptOpen, setSourcePromptOpen] = useState(false);
+  const [pendingStart, setPendingStart] = useState<'source' | 'audio' | null>(null);
+
+  function requestRecording(): void {
+    if (recorder.state !== 'idle' || countdown !== null) return;
+    if (selectedSourceId === null) {
+      setSourcePromptOpen(true);
+      window.focus(); // a hotkey may have asked while NovaRec was in the background
+      void sources.refetch(); // windows come and go; list what is open now
+      return;
+    }
+    beginRecording();
+  }
+
+  useEffect(() => {
+    if (pendingStart === null) return;
+    if (pendingStart === 'source' && selectedSourceId === null) return;
+    setPendingStart(null);
+    beginRecording();
+    // beginRecording is recreated every render and reads current state.
+  }, [pendingStart, selectedSourceId, region]);
+
+  const pickSource = (sourceId: string): void => {
+    setRegion(null); // a whole screen or window, not a previous area
+    setSelectedSourceId(sourceId);
+    setSourcePromptOpen(false);
+    setPendingStart('source');
+  };
+
+  // A saved choice from an earlier launch can name a window that no longer
+  // exists; recording it would fail, so forget it and ask instead.
+  useEffect(() => {
+    if (!sources.data || selectedSourceId === null) return;
+    const known =
+      sources.data.screens.some((s) => s.id === selectedSourceId) ||
+      sources.data.windows.some((w) => w.id === selectedSourceId);
+    if (!known) setSelectedSourceId(null);
+  }, [sources.data, selectedSourceId]);
 
   function beginRecording(): void {
     if (!canRecord || recorder.state !== 'idle' || countdown !== null) return;
@@ -634,7 +683,7 @@ export function RecordView(): ReactElement {
   const hotkeyHandler = useRef<(action: HotkeyAction) => void>(() => undefined);
   hotkeyHandler.current = (action) => {
     if (action === 'startStop') {
-      if (recorder.state === 'idle' && countdown === null) beginRecording();
+      if (recorder.state === 'idle' && countdown === null) requestRecording();
       else stopRecording();
     } else if (action === 'pauseResume') {
       if (recorder.state === 'recording') void recorder.pause();
@@ -724,9 +773,8 @@ export function RecordView(): ReactElement {
       <div className="mt-4">
         <RecordingControls
           recorder={recorder}
-          canStart={canRecord && recorder.state === 'idle' && countdown === null}
-          audioOnly={canRecord && selectedSourceId === null}
-          onStart={beginRecording}
+          canStart={recorder.state === 'idle' && countdown === null}
+          onStart={requestRecording}
           zoomed={zoomedIn}
           zoomShortcut={zoomShortcut}
         />
@@ -1212,6 +1260,33 @@ export function RecordView(): ReactElement {
           ? `${info.data.name} ${info.data.version} · ${displays.data?.length ?? 0} display(s) · ${info.data.platform}`
           : 'Connecting…'}
       </footer>
+
+      {sourcePromptOpen && (
+        <SourcePrompt
+          screens={screens}
+          windows={windows}
+          displays={displays.data ?? []}
+          error={sources.error}
+          loading={sources.isLoading}
+          areaEnabled={REGION_CAPTURE_ENABLED}
+          audioOnlyAvailable={micOn || (systemAudioOn && isWindows)}
+          onRetry={() => void sources.refetch()}
+          onPickScreen={pickSource}
+          onPickWindow={pickSource}
+          onPickArea={() => {
+            setSourcePromptOpen(false);
+            void selectRegion().then((picked) => {
+              if (picked) setPendingStart('source');
+              else setSourcePromptOpen(true); // cancelled the drag: ask again
+            });
+          }}
+          onAudioOnly={() => {
+            setSourcePromptOpen(false);
+            setPendingStart('audio');
+          }}
+          onCancel={() => setSourcePromptOpen(false)}
+        />
+      )}
     </section>
   );
 }
