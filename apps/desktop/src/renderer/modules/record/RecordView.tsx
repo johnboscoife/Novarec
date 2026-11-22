@@ -25,6 +25,7 @@ import { useRecorder } from './useRecorder.js';
 import { RecordingControls } from './RecordingControls.js';
 import { RecoveryBanner } from './RecoveryBanner.js';
 import { DiskSpaceNotice } from './DiskSpaceNotice.js';
+import { SourcesErrorNotice } from './SourcesErrorNotice.js';
 import { RecordHero, type HeroSummary } from './RecordHero.js';
 import { MicMeter } from './MicMeter.js';
 import { CameraSelect } from './CameraSelect.js';
@@ -717,6 +718,7 @@ export function RecordView(): ReactElement {
       </header>
 
       <RecoveryBanner />
+      <SourcesErrorNotice error={sources.error} onRetry={() => void sources.refetch()} />
       <DiskSpaceNotice />
 
       <div className="mt-4">

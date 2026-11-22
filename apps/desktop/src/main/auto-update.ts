@@ -13,6 +13,11 @@ import { app } from 'electron';
  */
 export function initAutoUpdate(): void {
   if (!app.isPackaged) return; // dev/tests have no packaged update feed
+  // macOS installs updates through Squirrel.Mac, which refuses any app not
+  // signed with a Developer ID certificate. Mac builds are ad-hoc signed for
+  // now (see electron-builder.yml), and releases carry no latest-mac.yml, so
+  // every check would only fail. Re-enable once mac builds are signed.
+  if (process.platform === 'darwin') return;
 
   void (async () => {
     try {

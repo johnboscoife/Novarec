@@ -64,9 +64,28 @@ nsis:
   deleteAppDataOnUninstall: false
 
 mac:
+  icon: build/icon.png
+  # Built per architecture: the bundled FFmpeg is downloaded for the machine
+  # running `pnpm install`, so a build only ships a working FFmpeg for that
+  # arch. Build on Apple Silicon for arm64, on an Intel Mac for x64.
   target:
-    - dmg
+    - target: dmg
   category: public.app-category.productivity
+  # Without these strings macOS terminates the app the moment it asks for the
+  # camera or microphone, rather than showing the permission prompt.
+  extendInfo:
+    NSCameraUsageDescription: NovaRec uses your camera to record it into your videos and meetings.
+    NSMicrophoneUsageDescription: NovaRec uses your microphone to record your voice in videos and meetings.
+  # Until a Developer ID certificate is configured, builds are ad-hoc signed
+  # (`-`): enough for Apple Silicon to launch the app, but not notarized, so
+  # Gatekeeper asks the user to approve it once. With a real identity, switch
+  # on hardenedRuntime and notarization.
+  identity: '-'
+  hardenedRuntime: false
+  gatekeeperAssess: false
+
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
 
 linux:
   target:

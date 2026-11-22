@@ -43,8 +43,14 @@ Common tasks:
 pnpm test                 # unit tests (Vitest)
 pnpm typecheck            # strict TypeScript across all packages
 pnpm lint                 # ESLint (no `any`, flat config)
-pnpm --filter @novarec/desktop build   # produce a platform installer
+pnpm --filter @novarec/desktop build       # Windows installer (NSIS)
+pnpm --filter @novarec/desktop build:mac   # macOS .dmg for this Mac's architecture
 ```
+
+macOS builds are ad-hoc signed until a Developer ID certificate is set up, so
+the first launch needs approval (System Settings → Privacy & Security → Open
+Anyway), and auto-update is off on macOS. Screen recording needs NovaRec turned
+on under Privacy & Security → Screen & System Audio Recording.
 
 Requirements: Node ≥ 20.11 and pnpm 9. **FFmpeg is bundled** (via
 `ffmpeg-static`) for both development and packaged builds — no system install
