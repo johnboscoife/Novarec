@@ -23,12 +23,23 @@ export class MeetingRecorder {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly audioCtx = new AudioContext();
   private readonly audioDest = this.audioCtx.createMediaStreamDestination();
-  private readonly videos = new Map<string, HTMLVideoElement>();
-  private readonly audioSources = new Map<string, MediaStreamAudioSourceNode>();
+  /** Hidden decode elements, with the track attached to each so it can be detached. */
+  private readonly videos = new Map<string, { el: HTMLVideoElement; track: Track }>();
+  /**
+   * Mixed-in microphones, keyed by publication. The underlying MediaStreamTrack
+   * is remembered too: LiveKit can swap it under the same publication (a mic
+   * device switch), and the old one then goes silent for good.
+   */
+  private readonly audioSources = new Map<
+    string,
+    { node: MediaStreamAudioSourceNode; track: MediaStreamTrack }
+  >();
+  /** Every canvas capture handed out, stopped with the recorder. */
+  private readonly captureTracks: MediaStreamTrack[] = [];
   // Identities kept OUT of the recording (composite + audio mix) — e.g. a
   // participant who joined mid-recording and hasn't consented yet.
   private readonly excluded = new Set<string>();
-  private raf = 0;
+  private timer: number | null = null;
 
   constructor(private readonly room: Room) {
     this.canvas.width = WIDTH;
@@ -55,25 +66,36 @@ export class MeetingRecorder {
   /** One A/V stream (composited video + mixed audio) for the recorder. */
   stream(fps = 30): MediaStream {
     const canvasTracks = this.canvas.captureStream(fps).getVideoTracks();
+    this.captureTracks.push(...canvasTracks);
     return new MediaStream([...canvasTracks, ...this.audioDest.stream.getAudioTracks()]);
   }
 
-  start(): void {
+  /**
+   * Drawn on a timer, not requestAnimationFrame: rAF stops entirely while the
+   * window is minimized or hidden, which froze the recorded meeting on one
+   * frame. The window opts out of background throttling, so a timer keeps
+   * ticking — the same reason the screen crop and compositor use timers.
+   */
+  start(fps = 30): void {
     if (this.audioCtx.state === 'suspended') void this.audioCtx.resume().catch(() => undefined);
-    const loop = (): void => {
-      this.draw();
-      this.raf = requestAnimationFrame(loop);
-    };
-    this.raf = requestAnimationFrame(loop);
+    if (this.timer !== null) return;
+    this.timer = window.setInterval(() => this.draw(), 1000 / fps);
   }
 
   stop(): void {
-    cancelAnimationFrame(this.raf);
-    for (const [, v] of this.videos) v.remove();
+    if (this.timer !== null) window.clearInterval(this.timer);
+    this.timer = null;
+    for (const [, v] of this.videos) this.dropVideo(v);
     this.videos.clear();
-    for (const [, s] of this.audioSources) s.disconnect();
+    for (const [, s] of this.audioSources) s.node.disconnect();
     this.audioSources.clear();
+    for (const track of this.captureTracks.splice(0)) track.stop();
     void this.audioCtx.close().catch(() => undefined);
+  }
+
+  private dropVideo(video: { el: HTMLVideoElement; track: Track }): void {
+    video.track.detach(video.el);
+    video.el.remove();
   }
 
   private draw(): void {
@@ -89,7 +111,7 @@ export class MeetingRecorder {
       const rect = rects[i];
       if (!rect) return;
       const cam = p.getTrackPublication(Track.Source.Camera);
-      const video = cam?.trackSid ? this.videos.get(cam.trackSid) : undefined;
+      const video = cam?.trackSid ? this.videos.get(cam.trackSid)?.el : undefined;
       if (video && video.readyState >= 2 && cam && !cam.isMuted) {
         drawCover(this.ctx, video, rect);
       } else {
@@ -137,18 +159,24 @@ export class MeetingRecorder {
           document.body.appendChild(v);
           cam.track.attach(v);
           void v.play().catch(() => undefined);
-          this.videos.set(cam.trackSid, v);
+          this.videos.set(cam.trackSid, { el: v, track: cam.track });
         }
       }
       const mic = p.getTrackPublication(Track.Source.Microphone);
       const micTrack = mic?.track?.mediaStreamTrack;
       if (micTrack && mic?.trackSid) {
         wantAudio.add(mic.trackSid);
+        const existing = this.audioSources.get(mic.trackSid);
+        if (existing && existing.track !== micTrack) {
+          // Same publication, new underlying track: reconnect to the live one.
+          existing.node.disconnect();
+          this.audioSources.delete(mic.trackSid);
+        }
         if (!this.audioSources.has(mic.trackSid)) {
           try {
             const src = this.audioCtx.createMediaStreamSource(new MediaStream([micTrack]));
             src.connect(this.audioDest);
-            this.audioSources.set(mic.trackSid, src);
+            this.audioSources.set(mic.trackSid, { node: src, track: micTrack });
           } catch {
             // track not ready — retry next frame
           }
@@ -158,13 +186,13 @@ export class MeetingRecorder {
 
     for (const [sid, v] of this.videos) {
       if (!wantVideo.has(sid)) {
-        v.remove();
+        this.dropVideo(v);
         this.videos.delete(sid);
       }
     }
     for (const [sid, s] of this.audioSources) {
       if (!wantAudio.has(sid)) {
-        s.disconnect();
+        s.node.disconnect();
         this.audioSources.delete(sid);
       }
     }

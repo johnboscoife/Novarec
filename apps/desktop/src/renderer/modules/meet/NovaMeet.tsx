@@ -217,9 +217,18 @@ export function NovaMeet(): ReactElement {
     if (!rtc || recording) return;
     try {
       const mr = new MeetingRecorder(rtc);
-      mr.start();
+      mr.start(30);
       meetingRecRef.current = mr;
-      await recorder.start([MEETING_TRACK], 30, { screen: mr.stream(30) });
+      const started = await recorder.start([MEETING_TRACK], 30, { screen: mr.stream(30) });
+      if (!started) {
+        // Never tell the other participants they are being recorded when
+        // nothing is recording them.
+        setError('Could not start recording the meeting. Try again.');
+        isRequestingRef.current = false;
+        mr.stop();
+        meetingRecRef.current = null;
+        return;
+      }
       isRequestingRef.current = false;
       recorderIdentityRef.current = rtc.localParticipant.identity; // we are the recorder
       setRecording(true);
