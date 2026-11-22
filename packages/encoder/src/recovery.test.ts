@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SegmentWriter } from './segment-writer.js';
 import { finalizeTrack, recoverRecording, scanForOrphans } from './recovery.js';
+import { nodeDisk, type DiskIO } from './disk.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const createdAt = '2026-07-22T00:00:00.000Z';
@@ -171,5 +172,55 @@ describe('crash recovery', () => {
     expect(result.segmentCount).toBeGreaterThanOrEqual(1);
     const output = await readFile(result.outputPath);
     expect(output.length).toBeGreaterThan(4); // init + at least one 128-byte segment
+  });
+});
+
+describe('crash recovery after a torn manifest line', () => {
+  async function tornRecording(vault: string, name: string): Promise<string> {
+    const dir = join(vault, name);
+    const writer = new SegmentWriter({ dir, recordingId: name, createdAt, targetDurationMs: 100 });
+    await writer.start(new Uint8Array([7]));
+    for (let i = 0; i < 6; i += 1) await writer.writeFragment(frag(), 40);
+    await appendFile(join(dir, 'manifest.jsonl'), '{"type":"segment-open","index":9,"pa');
+    return dir;
+  }
+
+  it('is recovered once, not offered again on every launch', async () => {
+    const vault = await tempVault();
+    await tornRecording(vault, 'torn');
+
+    const [orphan] = await scanForOrphans(vault);
+    if (!orphan) throw new Error('expected one orphan');
+    await recoverRecording(orphan.dir);
+
+    expect(await scanForOrphans(vault)).toEqual([]);
+  });
+
+  it('reads a stop that an older build fused onto the torn line', async () => {
+    const vault = await tempVault();
+    const dir = await tornRecording(vault, 'fused');
+    // What recovery wrote before the fix: the stop with no newline before it.
+    await appendFile(
+      join(dir, 'manifest.jsonl'),
+      '{"type":"stop","atMs":240,"status":"recovered"}\n',
+    );
+
+    expect(await scanForOrphans(vault)).toEqual([]);
+  });
+
+  it('one unreadable manifest does not hide the other orphans', async () => {
+    const vault = await tempVault();
+    await tornRecording(vault, 'locked');
+    await tornRecording(vault, 'readable');
+    const lockedDisk: DiskIO = {
+      ...nodeDisk,
+      async readText(path) {
+        if (path.includes('locked')) throw Object.assign(new Error('busy'), { code: 'EBUSY' });
+        return nodeDisk.readText(path);
+      },
+    };
+
+    const orphans = await scanForOrphans(vault, lockedDisk);
+    expect(orphans.map((o) => o.recordingId)).toEqual(['readable']);
   });
 });

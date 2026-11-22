@@ -112,3 +112,111 @@ describe('SegmentWriter', () => {
     expect(state.segments.some((s) => s.sealed)).toBe(true);
   });
 });
+
+describe('SegmentWriter under concurrency and manifest failures', () => {
+  /** A disk whose manifest appends are slow, to widen any race window. */
+  const slowManifestDisk: DiskIO = {
+    ...nodeDisk,
+    async appendAndSync(path, data) {
+      if (path.endsWith('manifest.jsonl')) await new Promise((r) => setTimeout(r, 15));
+      await nodeDisk.appendAndSync(path, data);
+    },
+  };
+
+  it('a pause that overlaps a fragment write neither drops it nor seals a missing file', async () => {
+    const dir = await tempDir();
+    const writer = new SegmentWriter({
+      dir,
+      recordingId: 'r',
+      createdAt,
+      targetDurationMs: 100_000,
+      disk: slowManifestDisk,
+    });
+    await writer.start(new Uint8Array([1]));
+
+    // Issued together, as the main process does with concurrent IPC calls.
+    await Promise.all([writer.writeFragment(frag(64), 50), writer.pause(50)]);
+    await writer.resume(50);
+    await writer.writeFragment(frag(64), 50);
+    const state = await writer.stop(200);
+
+    expect(totalDurationMs(state)).toBe(100);
+    for (const segment of state.segments.filter((s) => s.sealed)) {
+      // Every sealed segment must exist on disk with the bytes it claims.
+      expect((await stat(join(dir, segment.path))).size).toBe(segment.bytes);
+    }
+  });
+
+  it('starting twice at once writes one start line', async () => {
+    const dir = await tempDir();
+    const writer = new SegmentWriter({ dir, recordingId: 'r', createdAt, disk: slowManifestDisk });
+    await Promise.all([writer.start(new Uint8Array([1])), writer.start()]);
+    const text = await readFile(join(dir, 'manifest.jsonl'), 'utf8');
+    expect(parseEvents(text).filter((e) => e.type === 'start')).toHaveLength(1);
+  });
+
+  it('a failed segment-open line does not strand the fragments that follow', async () => {
+    const dir = await tempDir();
+    let failNextOpen = true;
+    const flaky: DiskIO = {
+      ...nodeDisk,
+      async appendAndSync(path, data) {
+        if (failNextOpen && new TextDecoder().decode(data).includes('"segment-open"')) {
+          failNextOpen = false;
+          throw Object.assign(new Error('locked'), { code: 'EBUSY' });
+        }
+        await nodeDisk.appendAndSync(path, data);
+      },
+    };
+    const writer = new SegmentWriter({
+      dir,
+      recordingId: 'r',
+      createdAt,
+      targetDurationMs: 100_000,
+      disk: flaky,
+    });
+    await writer.start(new Uint8Array([1]));
+
+    await expect(writer.writeFragment(frag(), 50)).rejects.toThrow('locked');
+    await writer.writeFragment(frag(), 50);
+    await writer.writeFragment(frag(), 50);
+    await writer.stop(1000);
+
+    // Read back what recovery and export will see.
+    const state = reduceEvents(parseEvents(await readFile(join(dir, 'manifest.jsonl'), 'utf8')));
+    expect(totalDurationMs(state)).toBe(100);
+    expect(state.segments.every((s) => s.sealed)).toBe(true);
+  });
+
+  it('a failed seal line keeps the segment open so a later seal records it', async () => {
+    const dir = await tempDir();
+    let failNextSeal = true;
+    const flaky: DiskIO = {
+      ...nodeDisk,
+      async appendAndSync(path, data) {
+        if (failNextSeal && new TextDecoder().decode(data).includes('"segment-seal"')) {
+          failNextSeal = false;
+          throw Object.assign(new Error('locked'), { code: 'EBUSY' });
+        }
+        await nodeDisk.appendAndSync(path, data);
+      },
+    };
+    const writer = new SegmentWriter({
+      dir,
+      recordingId: 'r',
+      createdAt,
+      targetDurationMs: 40,
+      disk: flaky,
+    });
+    await writer.start(new Uint8Array([1]));
+
+    // Reaches the target, so it tries to seal — and that seal line fails.
+    await expect(writer.writeFragment(frag(), 50)).rejects.toThrow('locked');
+    await writer.stop(1000);
+
+    const state = reduceEvents(parseEvents(await readFile(join(dir, 'manifest.jsonl'), 'utf8')));
+    expect(state.segments).toHaveLength(1);
+    expect(state.segments[0]?.sealed).toBe(true);
+    expect(totalDurationMs(state)).toBe(50);
+  });
+});

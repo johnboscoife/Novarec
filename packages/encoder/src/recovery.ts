@@ -29,9 +29,16 @@ export async function scanForOrphans(
   for (const entry of entries) {
     const dir = join(vaultDir, entry);
     const manifestPath = join(dir, MANIFEST_FILENAME);
-    if (!(await disk.exists(manifestPath))) continue;
-
-    const state = reduceEvents(parseEvents(await disk.readText(manifestPath)));
+    let state: ManifestState;
+    try {
+      if (!(await disk.exists(manifestPath))) continue;
+      state = reduceEvents(parseEvents(await disk.readText(manifestPath)));
+    } catch {
+      // One unreadable manifest (locked by antivirus or a sync client) must not
+      // hide every other recording that needs recovering. Skip it this time;
+      // the next scan will try it again.
+      continue;
+    }
     if (state.stopped) continue; // cleanly finalized or already recovered
 
     orphans.push({
@@ -108,7 +115,8 @@ export async function recoverRecording(
   disk: DiskIO = nodeDisk,
 ): Promise<RecoveryResult> {
   const manifestPath = join(dir, MANIFEST_FILENAME);
-  const state = reduceEvents(parseEvents(await disk.readText(manifestPath)));
+  const text = await disk.readText(manifestPath);
+  const state = reduceEvents(parseEvents(text));
   const sealed = sealedSegments(state);
 
   const files = trackFiles(dir, state);
@@ -116,9 +124,16 @@ export async function recoverRecording(
   await disk.concatToFile(outputPath, files);
 
   const durationMs = totalDurationMs(state);
+  // A crash mid-append leaves a torn last line with no newline. Appending the
+  // stop straight after it would fuse the two into one unparseable line, the
+  // stop would be lost, and the same recording would be offered again on
+  // every launch. Start a fresh line first.
+  const separator = text.length > 0 && !text.endsWith('\n') ? '\n' : '';
   await disk.appendAndSync(
     manifestPath,
-    encoder.encode(serializeEvent({ type: 'stop', atMs: durationMs, status: 'recovered' })),
+    encoder.encode(
+      separator + serializeEvent({ type: 'stop', atMs: durationMs, status: 'recovered' }),
+    ),
   );
 
   return { recordingId: state.recordingId, outputPath, segmentCount: sealed.length, durationMs };

@@ -74,16 +74,32 @@ export function parseEvents(jsonl: string): ManifestEvent[] {
   for (const line of jsonl.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    let json: unknown;
-    try {
-      json = JSON.parse(trimmed);
-    } catch {
-      continue; // torn/partial line — ignore
-    }
+    const json = parseLine(trimmed);
+    if (json === undefined) continue; // torn/partial line — ignore
     const parsed = ManifestEventSchema.safeParse(json);
     if (parsed.success) events.push(parsed.data);
   }
   return events;
+}
+
+/**
+ * Parse one manifest line. Older builds could append an event directly onto a
+ * torn line (no newline between them), so when the whole line is not JSON, the
+ * complete event at its end — every event serializes as `{"type":…` — is
+ * still recovered rather than lost with the torn prefix.
+ */
+function parseLine(line: string): unknown {
+  try {
+    return JSON.parse(line);
+  } catch {
+    const start = line.lastIndexOf('{"type":');
+    if (start <= 0) return undefined;
+    try {
+      return JSON.parse(line.slice(start));
+    } catch {
+      return undefined;
+    }
+  }
 }
 
 export function reduceEvents(events: readonly ManifestEvent[]): ManifestState {

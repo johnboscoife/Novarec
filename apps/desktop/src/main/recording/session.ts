@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { appendFile, readFile, readdir, rm, stat, statfs } from 'node:fs/promises';
-import { basename, join, resolve, sep } from 'node:path';
+import { basename, join } from 'node:path';
 import { app } from 'electron';
 import {
   DiskFullError,
@@ -21,6 +21,7 @@ import {
   type TrackConfig,
 } from '@novarec/shared';
 import { getStorageLocation } from '../app-state.js';
+import { isStrictlyInside } from './vault-path.js';
 
 /**
  * Multi-track recording. Each enabled track is an independent, durable
@@ -43,20 +44,37 @@ const sessions = new Map<string, Session>();
 const finalizedSummaries = new Map<string, RecordingSummary>();
 const MAX_REMEMBERED = 24;
 
-/** True if `dir` is the vault root or strictly inside it (separator-anchored,
- * so a sibling like `<vault>-backup` can't pass a bare prefix check). */
+/**
+ * True if `dir` is STRICTLY inside a recordings vault — a recording's own
+ * folder or something within it, never the vault root itself. Every caller
+ * passes one recording's folder, and some of them delete it: accepting the root
+ * would let a single bad path wipe every recording, and with a custom storage
+ * location (say, the user's Videos folder) everything else in there too.
+ */
 export function isInsideVault(dir: string): boolean {
-  const root = resolve(vault());
-  const target = resolve(dir);
-  return target === root || target.startsWith(root + sep);
+  return isStrictlyInside(dir, vaultRoots());
+}
+
+function defaultVault(): string {
+  return join(app.getPath('userData'), 'recordings');
 }
 
 function vault(): string {
   // A user-chosen storage folder (Settings → Storage) overrides the default
   // app-data vault. Read from the synchronous cache so all vault-scoped checks
   // stay sync. New recordings land here; existing ones stay where they were.
-  const custom = getStorageLocation();
-  return custom ?? join(app.getPath('userData'), 'recordings');
+  return getStorageLocation() ?? defaultVault();
+}
+
+/**
+ * Every vault a recording may live in. New recordings go to the current one,
+ * but recordings made before the user chose a custom storage location stay in
+ * the default vault — they must remain sizeable, recoverable and deletable.
+ */
+function vaultRoots(): string[] {
+  const current = vault();
+  const fallback = defaultVault();
+  return current === fallback ? [current] : [current, fallback];
 }
 
 /** The recordings vault path, so the UI can reveal it in the file manager. */

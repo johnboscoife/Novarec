@@ -53,6 +53,21 @@ export class SegmentWriter {
   private open: OpenSegment | null = null;
   private initSegment: string | null = null;
   private failed = false;
+  private started = false;
+  /**
+   * Every public operation runs through this chain, one at a time. The main
+   * process handles IPC calls concurrently, so without it a `pause` could seal
+   * a segment while a `writeFragment` was still between opening it and writing
+   * into it — dropping that fragment and leaving a sealed segment whose file
+   * was never created. A failed operation must not poison the ones behind it.
+   */
+  private queue: Promise<unknown> = Promise.resolve();
+
+  private serial<T>(operation: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(operation, operation);
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
 
   constructor(options: SegmentWriterOptions) {
     this.dir = options.dir;
@@ -74,7 +89,16 @@ export class SegmentWriter {
     return this.sealed;
   }
 
-  async start(initBytes?: Uint8Array): Promise<void> {
+  /** Idempotent: an init and a first fragment can both ask to start the track. */
+  start(initBytes?: Uint8Array): Promise<void> {
+    return this.serial(async () => {
+      if (this.started) return;
+      await this.startNow(initBytes);
+      this.started = true;
+    });
+  }
+
+  private async startNow(initBytes?: Uint8Array): Promise<void> {
     await this.disk.mkdir(this.dir);
     if (initBytes) {
       this.initSegment = 'init.mp4';
@@ -90,7 +114,11 @@ export class SegmentWriter {
     });
   }
 
-  async writeFragment(bytes: Uint8Array, durationMs: number): Promise<void> {
+  writeFragment(bytes: Uint8Array, durationMs: number): Promise<void> {
+    return this.serial(() => this.writeFragmentNow(bytes, durationMs));
+  }
+
+  private async writeFragmentNow(bytes: Uint8Array, durationMs: number): Promise<void> {
     // Only a genuine disk-full is terminal. A transient error (the append layer
     // already retried past a passing lock) loses at most this one ~1s fragment;
     // the track stays alive and keeps recording rather than being torn down.
@@ -116,51 +144,65 @@ export class SegmentWriter {
     }
   }
 
-  async pause(atMs: number): Promise<void> {
-    if (this.open) await this.sealOpen();
-    await this.append({ type: 'pause', atMs });
+  pause(atMs: number): Promise<void> {
+    return this.serial(async () => {
+      if (this.open) await this.sealOpen();
+      await this.append({ type: 'pause', atMs });
+    });
   }
 
-  async resume(atMs: number): Promise<void> {
-    await this.append({ type: 'resume', atMs });
+  resume(atMs: number): Promise<void> {
+    return this.serial(() => this.append({ type: 'resume', atMs }));
   }
 
   /**
    * Finalizes the recording. Best-effort and never throws — even a disk-full
    * stop should leave a clean, replayable manifest rather than blow up.
    */
-  async stop(atMs: number, status: RecordingStatus = 'ready'): Promise<ManifestState> {
-    try {
-      if (this.open) await this.sealOpen();
-      await this.append({ type: 'stop', atMs, status });
-    } catch {
-      // Swallow: sealed segments and prior manifest lines are already durable.
-    }
-    return this.state;
+  stop(atMs: number, status: RecordingStatus = 'ready'): Promise<ManifestState> {
+    return this.serial(async () => {
+      try {
+        if (this.open) await this.sealOpen();
+        await this.append({ type: 'stop', atMs, status });
+      } catch {
+        // Swallow: sealed segments and prior manifest lines are already durable.
+      }
+      return this.state;
+    });
   }
 
+  /**
+   * The manifest line is written BEFORE the segment counts as open. If that
+   * write fails, no fragment may land in a file the manifest never announced —
+   * recovery would ignore it, and its later seal, as belonging to no segment.
+   */
   private async openSegment(): Promise<void> {
     const index = this.nextIndex;
-    this.nextIndex += 1;
-    this.open = { index, bytes: 0, durationMs: 0 };
     await this.append({
       type: 'segment-open',
       index,
       path: segmentName(index),
       startMs: this.elapsedMs,
     });
+    this.nextIndex += 1;
+    this.open = { index, bytes: 0, durationMs: 0 };
   }
 
+  /**
+   * Likewise the seal is written BEFORE the segment stops being open: if it
+   * fails, the segment stays open and the next seal (by size, pause or stop)
+   * records it, rather than leaving a complete segment that is never sealed.
+   */
   private async sealOpen(): Promise<void> {
     const segment = this.open;
     if (!segment) return;
-    this.open = null;
     await this.append({
       type: 'segment-seal',
       index: segment.index,
       durationMs: segment.durationMs,
       bytes: segment.bytes,
     });
+    this.open = null;
     this.sealed += 1;
   }
 

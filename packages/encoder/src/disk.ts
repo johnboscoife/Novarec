@@ -1,5 +1,6 @@
 import { mkdir, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import { dirname } from 'node:path';
 
 // A transient file lock (antivirus scan, Windows Search indexer, OneDrive sync)
 // briefly fails an open/write with EBUSY/EPERM/EACCES on the very machines we
@@ -7,6 +8,27 @@ import { randomUUID } from 'node:crypto';
 // track — but ENOSPC is genuinely fatal and must never be retried.
 const APPEND_RETRIES = 4;
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * fsync a directory, so a file just created or renamed in it is durably
+ * NAMED there. fsync on the file makes its bytes durable, but on ext4/APFS the
+ * directory entry pointing at it can still be lost to a power cut.
+ *
+ * Best-effort: Windows cannot open a directory this way (NTFS journals its
+ * metadata anyway), so any failure is ignored rather than failing the write.
+ */
+async function syncDir(dir: string): Promise<void> {
+  try {
+    const fh = await open(dir, 'r');
+    try {
+      await fh.sync();
+    } finally {
+      await fh.close();
+    }
+  } catch {
+    // not supported on this platform/filesystem
+  }
+}
 
 /**
  * Durable disk operations behind an interface so tests can inject failures
@@ -44,6 +66,7 @@ export const nodeDisk: DiskIO = {
     } finally {
       await fh.close();
     }
+    await syncDir(dirname(path));
   },
   async concatToFile(outputPath, inputPaths) {
     // Build in a temp sibling and rename into place, never in the destination
@@ -76,6 +99,7 @@ export const nodeDisk: DiskIO = {
         await out.close();
       }
       await rename(tempPath, outputPath);
+      await syncDir(dirname(outputPath));
     } catch (error) {
       await rm(tempPath, { force: true }).catch(() => undefined);
       throw error;
@@ -100,6 +124,9 @@ export const nodeDisk: DiskIO = {
         try {
           await fh.write(data);
           await fh.sync();
+          // A first write means the file was just created (a new segment, or
+          // the manifest itself): make its directory entry durable too.
+          if (size === 0) await syncDir(dirname(path));
           return;
         } catch (error) {
           await fh.truncate(size).catch(() => undefined);
