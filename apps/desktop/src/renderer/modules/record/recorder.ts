@@ -3,6 +3,7 @@ import { recommendedAudioBitrate, recommendedVideoBitrate } from '@novarec/captu
 import { CroppedScreenStream, type RegionSpec } from './cropStream.js';
 import { CompositedVideoStream } from './compositeStream.js';
 import { CursorEffectsStream, type CursorEffectsOptions } from './cursorEffects.js';
+import { ThrottleGroup, type ThrottleMember } from './throttleGroup.js';
 
 /**
  * Multi-track recording from the renderer. Each enabled track (screen, camera,
@@ -159,7 +160,7 @@ export interface RecorderCallbacks {
   onError(message: string): void;
 }
 
-class TrackRecorder {
+class TrackRecorder implements ThrottleMember {
   private recorder: MediaRecorder | null = null;
   private lastChunkAt = 0;
   private queue: Promise<void> = Promise.resolve();
@@ -192,7 +193,35 @@ class TrackRecorder {
      * it is change-driven, so a still screen legitimately goes quiet.
      */
     private readonly steadySource = false,
-  ) {}
+    /** Shared with the take's other tracks so they pause for disk together. */
+    private readonly throttleGroup: ThrottleGroup = new ThrottleGroup(),
+  ) {
+    this.throttleGroup.join(this);
+  }
+
+  /** Pause for disk backpressure (no-op while the user has paused). */
+  throttle(): void {
+    if (this.throttled || this.userPaused || this.recorder?.state !== 'recording') return;
+    this.throttled = true;
+    try {
+      this.recorder.pause();
+    } catch {
+      // ignore — nothing we can do if the recorder refuses to pause
+    }
+  }
+
+  unthrottle(): void {
+    if (!this.throttled) return;
+    this.throttled = false;
+    if (this.userPaused || this.recorder?.state !== 'paused') return;
+    // Resume from now so the drain gap isn't counted as recorded time.
+    this.lastChunkAt = performance.now();
+    try {
+      this.recorder.resume();
+    } catch {
+      // ignore
+    }
+  }
 
   start(): void {
     // Choose the container/codec from what the stream actually carries, so a
@@ -273,16 +302,10 @@ class TrackRecorder {
             'Lower the frame rate or free disk space to avoid gaps.',
         );
       }
-      // Genuine backpressure: stop the encoder so memory can't grow unbounded.
-      // ondataavailable won't fire while paused, so the queue drains.
-      if (!this.throttled && !this.userPaused && this.recorder?.state === 'recording') {
-        this.throttled = true;
-        try {
-          this.recorder.pause();
-        } catch {
-          // ignore — nothing we can do if the recorder refuses to pause
-        }
-      }
+      // Genuine backpressure: stop the encoders so memory can't grow
+      // unbounded. ondataavailable won't fire while paused, so the queue
+      // drains. Every track of the take pauses, keeping them in sync.
+      this.throttleGroup.request(this);
     }
 
     this.queue = this.queue.then(async () => {
@@ -302,16 +325,7 @@ class TrackRecorder {
         this.pendingBytes -= blob.size;
         if (this.pendingChunks <= RESUME_PENDING_CHUNKS) {
           this.backpressured = false; // drained — allow a fresh warning if it recurs
-          if (this.throttled && !this.userPaused && this.recorder?.state === 'paused') {
-            this.throttled = false;
-            // Resume from now so the drain gap isn't counted as recorded time.
-            this.lastChunkAt = performance.now();
-            try {
-              this.recorder.resume();
-            } catch {
-              // ignore
-            }
-          }
+          this.throttleGroup.release(this);
         }
       }
     });
@@ -338,6 +352,8 @@ class TrackRecorder {
   }
 
   async stop(): Promise<void> {
+    // A stopped track must not hold the rest of the take paused.
+    this.throttleGroup.leave(this);
     if (this.watchdog !== null) {
       window.clearInterval(this.watchdog);
       this.watchdog = null;
@@ -511,6 +527,8 @@ export class MultiTrackRecorder {
   private pausedAtMs = 0;
   private pausedAccumMs = 0;
   private perTrack = new Map<string, number>();
+  /** One per take: its tracks pause for disk backpressure together. */
+  private throttleGroup = new ThrottleGroup();
 
   constructor(private readonly callbacks: RecorderCallbacks) {}
 
@@ -697,6 +715,7 @@ export class MultiTrackRecorder {
       this.quality,
       this.fps,
       steadySource,
+      this.throttleGroup,
     );
   }
 
@@ -876,5 +895,6 @@ export class MultiTrackRecorder {
     this.pausedAtMs = 0;
     this.pausedAccumMs = 0;
     this.perTrack.clear();
+    this.throttleGroup = new ThrottleGroup();
   }
 }
