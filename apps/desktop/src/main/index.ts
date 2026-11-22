@@ -18,6 +18,12 @@ import { stopPhoneSession } from './phone/server.js';
 
 const isDev = !app.isPackaged;
 
+// End-to-end tests run the app against a throwaway profile so they can never
+// read or write a developer's real recordings and settings. Must be set before
+// anything resolves `userData`; ignored by installed builds.
+const userDataOverride = process.env['NOVAREC_USER_DATA_DIR'];
+if (isDev && userDataOverride) app.setPath('userData', userDataOverride);
+
 // Set once app.quit() has begun (menu quit, app.close() in tests, OS shutdown),
 // so the window 'close' handler doesn't re-prompt on a programmatic quit.
 let isQuitting = false;
