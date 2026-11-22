@@ -51,6 +51,25 @@ describe('cursor-zoom keyframe generation', () => {
     expect(kfs).toHaveLength(8); // two clusters × 4 control points
   });
 
+  it('pans between nearby clusters instead of bouncing out and back in', () => {
+    // 700ms apart: beyond the 600ms merge gap, but well inside one zoom's
+    // hold + ease-out, so the two zooms would otherwise interleave.
+    const kfs = generateZoomKeyframes(
+      [click(1000, 100, 100), click(1700, 900, 400)],
+      FRAME,
+      DEFAULT_ZOOM_CONFIG,
+    );
+    const times = kfs.map((k) => k.atMs);
+    expect(times).toEqual([...times].sort((a, b) => a - b));
+    // Zoomed in throughout, from the first click to the second cluster's hold.
+    for (let t = 1000; t <= 1700 + DEFAULT_ZOOM_CONFIG.holdMs; t += 50) {
+      expect(sampleZoomAt(kfs, t).scale).toBe(DEFAULT_ZOOM_CONFIG.intensity);
+    }
+    // …while the view travels from the first click to the second.
+    expect(sampleZoomAt(kfs, 1000).centerXNorm).toBeCloseTo(0.1, 5);
+    expect(sampleZoomAt(kfs, 1700).centerXNorm).toBeCloseTo(0.9, 5);
+  });
+
   it('never emits a keyframe at a negative time', () => {
     const cfg = { ...DEFAULT_ZOOM_CONFIG, easeMs: 500 };
     const kfs = generateZoomKeyframes([click(100, 500, 250)], FRAME, cfg);

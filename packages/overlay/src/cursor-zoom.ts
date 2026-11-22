@@ -87,14 +87,30 @@ export function generateZoomKeyframes(
       cluster.reduce((sum, e) => sum + e.y, 0) / cluster.length / frame.height,
     );
     const center = { centerXNorm, centerYNorm, easing: 'easeInOut' as const };
+    const zoomInAt = Math.max(0, first.atMs - config.easeMs);
 
-    keyframes.push({ atMs: Math.max(0, first.atMs - config.easeMs), scale: 1, ...center });
+    // Clusters are split by `mergeGapMs`, but each one's zoom lasts
+    // `holdMs + 2 * easeMs` — longer. When this cluster would start zooming in
+    // before the previous one has finished zooming out, the two sets of
+    // keyframes interleave and the view bounces (in, out, in) between them.
+    // Instead stay zoomed and PAN: drop the previous zoom-out, end its hold no
+    // later than one ease before this cluster, and skip this zoom-in.
+    const prevOut = keyframes[keyframes.length - 1];
+    const prevHold = keyframes[keyframes.length - 2];
+    if (prevOut && prevHold && prevOut.scale === 1 && zoomInAt < prevOut.atMs) {
+      keyframes.pop();
+      const prevLastActivity = prevHold.atMs - config.holdMs;
+      prevHold.atMs = Math.max(prevLastActivity, Math.min(prevHold.atMs, zoomInAt));
+    } else {
+      keyframes.push({ atMs: zoomInAt, scale: 1, ...center });
+    }
     keyframes.push({ atMs: first.atMs, scale: config.intensity, ...center });
     keyframes.push({ atMs: last.atMs + config.holdMs, scale: config.intensity, ...center });
     keyframes.push({ atMs: last.atMs + config.holdMs + config.easeMs, scale: 1, ...center });
   }
 
-  return keyframes.sort((a, b) => a.atMs - b.atMs);
+  // Already in time order: clusters are sorted and never overlap any more.
+  return keyframes;
 }
 
 function smoothstep(t: number): number {

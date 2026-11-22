@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   clipTimelineEnd,
+  mergeRanges,
   removeRanges,
   removeTimelineRange,
   rippleDelete,
@@ -86,5 +87,42 @@ describe('removeRanges', () => {
     ]);
     expect(timelineDuration(out)).toBe(8000);
     expect(clipTimelineEnd(out[out.length - 1] ?? clip({}))).toBe(8000);
+  });
+});
+
+describe('overlapping cuts and repeated edits', () => {
+  it('cuts exactly the union of overlapping ranges, nothing more', () => {
+    // A filler word [2000,4000) inside a silence [1000,3000) — union is [1000,4000).
+    const out = removeRanges([clip({})], 't', [
+      { startMs: 1000, endMs: 3000 },
+      { startMs: 2000, endMs: 4000 },
+    ]);
+    expect(timelineDuration(out)).toBe(7000);
+    // What survives after the cut is source from 4000 on, not later.
+    const after = out.find((c) => c.timelineStartMs === 1000);
+    expect(after?.sourceInMs).toBe(4000);
+  });
+
+  it('merges touching ranges and ignores empty ones', () => {
+    expect(
+      mergeRanges([
+        { startMs: 5, endMs: 8 },
+        { startMs: 0, endMs: 2 },
+        { startMs: 2, endMs: 3 },
+        { startMs: 4, endMs: 4 },
+      ]),
+    ).toEqual([
+      { startMs: 0, endMs: 3 },
+      { startMs: 5, endMs: 8 },
+    ]);
+  });
+
+  it('never produces two clips with the same id', () => {
+    let clips = splitClip([clip({ id: 'x' })], 'x', 6000);
+    clips = splitClip(clips, 'x', 3000); // split the original again
+    clips = removeTimelineRange(clips, 't', 1000, 2000);
+    clips = removeTimelineRange(clips, 't', 500, 700);
+    const ids = clips.map((c) => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });

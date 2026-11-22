@@ -33,9 +33,22 @@ function byTimeline(a: Clip, b: Clip): number {
   return a.timelineStartMs - b.timelineStartMs;
 }
 
+/**
+ * An id derived from `base` that no clip in `taken` has yet, and reserve it.
+ * Splitting `x` gives `x:2`; splitting the original `x` again must not produce
+ * a second `x:2`, or every later id-based edit (trim, delete) hits both.
+ */
+function freshId(taken: Set<string>, base: string, suffix: string): string {
+  let id = `${base}:${suffix}`;
+  for (let n = 2; taken.has(id); n += 1) id = `${base}:${suffix}${n}`;
+  taken.add(id);
+  return id;
+}
+
 /** Split a clip at a timeline position that falls strictly inside it. */
 export function splitClip(clips: readonly Clip[], clipId: string, atTimelineMs: number): Clip[] {
   const result: Clip[] = [];
+  const taken = new Set(clips.map((c) => c.id));
   for (const clip of clips) {
     if (
       clip.id !== clipId ||
@@ -49,7 +62,7 @@ export function splitClip(clips: readonly Clip[], clipId: string, atTimelineMs: 
     result.push({ ...clip, sourceOutMs: clip.sourceInMs + offset });
     result.push({
       ...clip,
-      id: `${clip.id}:2`,
+      id: freshId(taken, clip.id, '2'),
       sourceInMs: clip.sourceInMs + offset,
       timelineStartMs: atTimelineMs,
     });
@@ -100,6 +113,7 @@ export function removeTimelineRange(
   if (toMs <= fromMs) return [...clips];
   const rangeLen = toMs - fromMs;
   const result: Clip[] = [];
+  const taken = new Set(clips.map((c) => c.id));
 
   for (const clip of clips) {
     if (clip.trackId !== trackId) {
@@ -124,7 +138,7 @@ export function removeTimelineRange(
     if (end > toMs) {
       result.push({
         ...clip,
-        id: `${clip.id}:r`,
+        id: freshId(taken, clip.id, 'r'),
         sourceInMs: clip.sourceInMs + (toMs - start),
         timelineStartMs: fromMs,
       });
@@ -134,13 +148,38 @@ export function removeTimelineRange(
   return result.sort(byTimeline);
 }
 
-/** Apply a batch of cut ranges (e.g. all fillers) to a track, right-to-left. */
+/**
+ * Merge overlapping or touching ranges into disjoint ones, in time order.
+ * Empty and inverted ranges are dropped.
+ */
+export function mergeRanges(ranges: readonly TimeRange[]): TimeRange[] {
+  const sorted = ranges
+    .filter((r) => r.endMs > r.startMs)
+    .map((r) => ({ startMs: r.startMs, endMs: r.endMs }))
+    .sort((a, b) => a.startMs - b.startMs);
+  const merged: TimeRange[] = [];
+  for (const range of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && range.startMs <= last.endMs) last.endMs = Math.max(last.endMs, range.endMs);
+    else merged.push(range);
+  }
+  return merged;
+}
+
+/**
+ * Apply a batch of cut ranges (e.g. all fillers) to a track, right-to-left.
+ *
+ * Ranges are merged first. Overlapping cuts are normal — a filler word inside
+ * a silence — and applied one by one, the later cut would ripple content left
+ * underneath the earlier one, which would then delete material nobody chose.
+ */
 export function removeRanges(
   clips: readonly Clip[],
   trackId: string,
   ranges: readonly TimeRange[],
 ): Clip[] {
-  const ordered = [...ranges].sort((a, b) => b.startMs - a.startMs); // latest first so offsets stay valid
+  // Latest first so earlier offsets stay valid.
+  const ordered = mergeRanges(ranges).reverse();
   let current = [...clips];
   for (const range of ordered) {
     current = removeTimelineRange(current, trackId, range.startMs, range.endMs);
