@@ -9,6 +9,7 @@ import { hideWebcam } from './overlays/webcam-window.js';
 import {
   isRecordingActive,
   setConfirmOnExit,
+  setPreviousStorageLocations,
   setStorageLocation,
   shouldConfirmExit,
 } from './app-state.js';
@@ -195,6 +196,7 @@ app
     void loadAppSettings().then((s) => {
       setConfirmOnExit(s.confirmOnExit); // seed exit guard
       setStorageLocation(s.storageLocation); // seed the recordings vault location
+      setPreviousStorageLocations(s.previousStorageLocations); // and the older ones
     });
     setHostWindow(createMainWindow());
     initAutoUpdate(); // checks for updates in packaged builds with a feed configured

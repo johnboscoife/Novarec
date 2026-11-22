@@ -10,6 +10,10 @@ export const AppSettingsSchema = z.object({
   telemetryOptIn: z.boolean(), // strictly opt-in; default OFF
   vaultMode: z.boolean(), // encrypt media at rest
   storageLocation: z.string().nullable(),
+  // Custom storage folders used before the current one. Recordings stay where
+  // they were made, so these remain vaults: still listed for crash recovery,
+  // still measurable and deletable. Maintained by the main process.
+  previousStorageLocations: z.array(z.string()).default([]),
   storageQuotaGb: z.number().positive().nullable(),
   onboardingComplete: z.boolean(),
   // Immediately produce a shareable MP4 when a recording stops. `.default`
@@ -47,6 +51,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   telemetryOptIn: false,
   vaultMode: false,
   storageLocation: null,
+  previousStorageLocations: [],
   storageQuotaGb: null,
   onboardingComplete: false,
   autoExportOnStop: true,

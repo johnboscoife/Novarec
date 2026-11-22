@@ -38,7 +38,13 @@ import {
   dispatchCommand,
   pushControlState,
 } from './overlays/controls-window.js';
-import { setConfirmOnExit, setRecordingActive, setStorageLocation } from './app-state.js';
+import {
+  setConfirmOnExit,
+  setPreviousStorageLocations,
+  setRecordingActive,
+  setStorageLocation,
+} from './app-state.js';
+import { nextPreviousLocations } from './recording/vault-path.js';
 import { buildAccessToken, grantForRoom } from './meet/livekit-token.js';
 import { loadCaptureSettings, saveCaptureSettings } from './settings-store.js';
 import {
@@ -292,9 +298,15 @@ export function registerIpcHandlers(): void {
   handleChannel('settings:get', async () => redactSecrets(await loadAppSettings()));
   handleChannel('settings:save', async (req) => {
     const stored = await loadAppSettings();
-    const saved = await saveAppSettings(restoreSecrets(req, stored));
+    const saved = await saveAppSettings({
+      ...restoreSecrets(req, stored),
+      // Kept by main from what was stored, never taken from the renderer, so
+      // leaving a storage folder can't forget the recordings made in it.
+      previousStorageLocations: nextPreviousLocations(stored, req.storageLocation),
+    });
     setConfirmOnExit(saved.confirmOnExit); // keep the sync exit-guard current
     setStorageLocation(saved.storageLocation); // keep the vault path current
+    setPreviousStorageLocations(saved.previousStorageLocations);
     return redactSecrets(saved);
   });
 

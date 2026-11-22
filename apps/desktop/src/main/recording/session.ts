@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { appendFile, readFile, readdir, rm, stat, statfs } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { app } from 'electron';
 import {
   DiskFullError,
@@ -20,7 +20,7 @@ import {
   type RecoveryResult,
   type TrackConfig,
 } from '@novarec/shared';
-import { getStorageLocation } from '../app-state.js';
+import { getPreviousStorageLocations, getStorageLocation } from '../app-state.js';
 import { isStrictlyInside } from './vault-path.js';
 
 /**
@@ -67,14 +67,20 @@ function vault(): string {
 }
 
 /**
- * Every vault a recording may live in. New recordings go to the current one,
- * but recordings made before the user chose a custom storage location stay in
- * the default vault — they must remain sizeable, recoverable and deletable.
+ * Every vault a recording may live in, current first. New recordings go to the
+ * current one, but recordings made earlier stay where they were made — the
+ * default vault, or any storage folder used before — and must remain
+ * sizeable, recoverable and deletable.
  */
 function vaultRoots(): string[] {
-  const current = vault();
-  const fallback = defaultVault();
-  return current === fallback ? [current] : [current, fallback];
+  const roots = [vault(), defaultVault(), ...getPreviousStorageLocations()];
+  const seen = new Set<string>();
+  return roots.filter((root) => {
+    const key = resolve(root);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** The recordings vault path, so the UI can reveal it in the file manager. */
@@ -234,9 +240,20 @@ async function finalize(recordingId: string, atMs: number): Promise<RecordingSum
   return summary;
 }
 
-/** Group per-track orphans by recording (a recording is orphaned if any track is). */
+/**
+ * Group per-track orphans by recording (a recording is orphaned if any track
+ * is). Every vault is scanned: a take that crashed before the storage folder
+ * was changed still deserves to be offered for recovery.
+ */
 export async function listOrphans(): Promise<OrphanedRecording[]> {
-  const root = vault();
+  const result: OrphanedRecording[] = [];
+  for (const root of vaultRoots()) {
+    result.push(...(await orphansIn(root)));
+  }
+  return result;
+}
+
+async function orphansIn(root: string): Promise<OrphanedRecording[]> {
   const result: OrphanedRecording[] = [];
   for (const recordingId of await subdirectories(root)) {
     const recDir = join(root, recordingId);

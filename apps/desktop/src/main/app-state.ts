@@ -6,6 +6,7 @@
 let recordingActive = false;
 let confirmOnExit = true;
 let storageLocation: string | null = null;
+let previousStorageLocations: readonly string[] = [];
 
 export function setRecordingActive(active: boolean): void {
   recordingActive = active;
@@ -27,4 +28,12 @@ export function setStorageLocation(location: string | null): void {
 }
 export function getStorageLocation(): string | null {
   return storageLocation;
+}
+
+/** Storage folders used before the current one (still vaults). */
+export function setPreviousStorageLocations(locations: readonly string[]): void {
+  previousStorageLocations = [...locations];
+}
+export function getPreviousStorageLocations(): readonly string[] {
+  return previousStorageLocations;
 }
