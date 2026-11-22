@@ -558,7 +558,15 @@ export class MultiTrackRecorder {
           // Record the mic through a resilient pipeline so unplugging the device
           // mid-recording swaps to the system default instead of dropping audio.
           const swapper = new ResilientAudioStream(config.deviceId ?? null);
-          await swapper.start();
+          try {
+            await swapper.start();
+          } catch (error) {
+            // Its AudioContext exists from construction; a start that fails
+            // (permission denied, no device) must still close it — Chromium
+            // caps live AudioContexts — and must not linger to reopen the mic.
+            swapper.stop();
+            throw error;
+          }
           this.audioSwappers.push(swapper);
           stream = swapper.stream;
         } else if (
@@ -794,9 +802,16 @@ export class MultiTrackRecorder {
   }
 
   /** Milliseconds of actual recorded footage so far (pauses excluded). */
-  private elapsedMs(): number {
+  /**
+   * Recorded time so far. A pause in progress is not yet in `pausedAccumMs`
+   * (that happens on resume), so it is subtracted here — otherwise a marker
+   * dropped, or a stop pressed, while paused lands later than the footage.
+   */
+  elapsedMs(): number {
     if (this.startedAtMs === 0) return 0;
-    return Math.max(0, performance.now() - this.startedAtMs - this.pausedAccumMs);
+    const now = performance.now();
+    const currentPause = this.pausedAtMs > 0 ? now - this.pausedAtMs : 0;
+    return Math.max(0, now - this.startedAtMs - this.pausedAccumMs - currentPause);
   }
 
   async pause(): Promise<void> {
@@ -823,15 +838,23 @@ export class MultiTrackRecorder {
   }
 
   async stop(): Promise<{ dir: string } | null> {
-    await Promise.all(this.tracks.map((t) => t.stop()));
-    let result: { dir: string } | null = null;
-    if (this.recordingId) {
+    try {
+      await Promise.all(this.tracks.map((t) => t.stop()));
+      if (!this.recordingId) return null;
       const summary = await window.novarec.stopRecording({
         recordingId: this.recordingId,
         atMs: this.elapsedMs(),
       });
-      result = { dir: summary.dir };
+      return { dir: summary.dir };
+    } finally {
+      // Always release, even when finalizing failed: the caller has already
+      // let go of this recorder, so anything left running here (the capture,
+      // the camera) could never be stopped again.
+      this.release();
     }
+  }
+
+  private release(): void {
     this.audioSwappers.forEach((s) => s.stop());
     this.audioSwappers = [];
     // Tear down the crop pump and its underlying full-screen capture.
@@ -853,6 +876,5 @@ export class MultiTrackRecorder {
     this.pausedAtMs = 0;
     this.pausedAccumMs = 0;
     this.perTrack.clear();
-    return result;
   }
 }

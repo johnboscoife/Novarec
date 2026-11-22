@@ -93,6 +93,15 @@ export function RecordView(): ReactElement {
   const [rawBytes, setRawBytes] = useState<number | null>(null);
   const [rawDeleted, setRawDeleted] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const countdownTimer = useRef<number | null>(null);
+  // Leaving the view mid-countdown must not start a take nobody can see.
+  useEffect(
+    () => () => {
+      if (countdownTimer.current !== null) window.clearInterval(countdownTimer.current);
+      countdownTimer.current = null;
+    },
+    [],
+  );
   const [showPhonePanel, setShowPhonePanel] = useState(true);
 
   // Phone-as-camera over Wi-Fi. Its stream is injected into the recorder as a
@@ -391,22 +400,52 @@ export function RecordView(): ReactElement {
     // The phone stream is already acquired; hand it to the recorder rather than
     // letting it try to open a device that does not exist locally.
     const provided = usingPhoneCamera && phone.stream ? { camera: phone.stream } : undefined;
+    const startNow = (): void => {
+      void recorder.start(configs, targetFps, provided, options).then((started) => {
+        // Tracking began above, before the take; a take that never started
+        // must not leave the global pointer hook running.
+        if (!started) void window.novarec.stopCursorTracking().catch(() => undefined);
+      });
+    };
     if (sequence.length === 0) {
-      void recorder.start(configs, targetFps, provided, options);
+      startNow();
       return;
     }
     let index = 0;
     setCountdown(sequence[0] ?? null);
-    const timer = window.setInterval(() => {
+    countdownTimer.current = window.setInterval(() => {
       index += 1;
       if (index >= sequence.length) {
-        window.clearInterval(timer);
+        clearCountdownTimer();
         setCountdown(null);
-        void recorder.start(configs, targetFps, provided, options);
+        startNow();
       } else {
         setCountdown(sequence[index] ?? null);
       }
     }, 1000);
+  }
+
+  function clearCountdownTimer(): void {
+    if (countdownTimer.current !== null) window.clearInterval(countdownTimer.current);
+    countdownTimer.current = null;
+  }
+
+  /**
+   * Abandon a countdown before it starts a take. During the countdown the
+   * recorder is still idle, so without this a stop request (hotkey, floating
+   * controller) would do nothing and the take would start anyway.
+   */
+  function cancelCountdown(): boolean {
+    if (countdownTimer.current === null) return false;
+    clearCountdownTimer();
+    setCountdown(null);
+    void window.novarec.stopCursorTracking().catch(() => undefined);
+    return true;
+  }
+
+  /** Stop whatever is in progress: a countdown, or the take itself. */
+  function stopRecording(): void {
+    if (!cancelCountdown()) void recorder.stop();
   }
 
   function exportLastRecording(): void {
@@ -572,7 +611,7 @@ export function RecordView(): ReactElement {
   controlHandler.current = (action) => {
     if (action === 'pause') void recorder.pause();
     else if (action === 'resume') void recorder.resume();
-    else if (action === 'stop') void recorder.stop();
+    else if (action === 'stop') stopRecording();
     else if (action === 'muteMic') {
       const next = !micMuted;
       setMicMuted(next);
@@ -594,8 +633,8 @@ export function RecordView(): ReactElement {
   const hotkeyHandler = useRef<(action: HotkeyAction) => void>(() => undefined);
   hotkeyHandler.current = (action) => {
     if (action === 'startStop') {
-      if (recorder.state === 'idle') beginRecording();
-      else void recorder.stop();
+      if (recorder.state === 'idle' && countdown === null) beginRecording();
+      else stopRecording();
     } else if (action === 'pauseResume') {
       if (recorder.state === 'recording') void recorder.pause();
       else if (recorder.state === 'paused') void recorder.resume();
@@ -609,7 +648,7 @@ export function RecordView(): ReactElement {
     } else if (action === 'cursorZoomNow') {
       toggleZoom();
     } else if (action === 'panicStop') {
-      void recorder.stop();
+      stopRecording();
     }
   };
   useEffect(() => window.novarec.onHotkey((action) => hotkeyHandler.current(action)), []);

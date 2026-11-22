@@ -11,12 +11,13 @@ export interface RecorderControls {
   segmentCount: number;
   error: string | null;
   lastRecordingDir: string | null;
+  /** Resolves true once recording, false if it failed or was cancelled. */
   start(
     configs: TrackConfig[],
     targetFps: number,
     providedStreams?: Record<string, MediaStream>,
     options?: RecorderOptions,
-  ): Promise<void>;
+  ): Promise<boolean>;
   pause(): Promise<void>;
   resume(): Promise<void>;
   stop(): Promise<void>;
@@ -82,7 +83,7 @@ export function useRecorder(): RecorderControls {
     ) => {
       // Guard against a double-start (rapid clicks, or start during an in-flight
       // stop): a second recorder would overwrite the ref and orphan the first.
-      if (recorderRef.current) return;
+      if (recorderRef.current) return false;
       setError(null);
       setSegmentCount(0);
       setElapsedMs(0);
@@ -97,12 +98,30 @@ export function useRecorder(): RecorderControls {
       pausedAccumMs.current = 0;
       try {
         await recorder.start(configs, targetFps, providedStreams, options);
-        setState('recording');
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Could not start recording');
-        recorderRef.current = null;
-        setState('idle');
+        // Only report on the take that is still current; one already cancelled
+        // by stop or unmount has nothing left to tell the user.
+        if (recorderRef.current === recorder) {
+          setError(err instanceof Error ? err.message : 'Could not start recording');
+          recorderRef.current = null;
+          setState('idle');
+        } else {
+          // Cancelled mid-start and then failed: release whatever it acquired.
+          await recorder.stop().catch(() => undefined);
+        }
+        return false;
       }
+      // Starting takes seconds (the screen picker, waiting for first frames).
+      // A stop — the panic hotkey, or this view unmounting — that landed in
+      // that window has already let go of this recorder. Marking it
+      // 'recording' now would leave a live capture with nothing able to stop
+      // it, so finish the cancellation instead.
+      if (recorderRef.current !== recorder) {
+        await recorder.stop().catch(() => undefined);
+        return false;
+      }
+      setState('recording');
+      return true;
     },
     [],
   );
@@ -157,9 +176,12 @@ export function useRecorder(): RecorderControls {
    * survives a crash exactly as the footage does.
    */
   const addMarker = useCallback((label?: string) => {
-    const recordingId = recorderRef.current?.id;
-    if (!recordingId) return;
-    const atMs = Math.max(0, performance.now() - startedAt.current - pausedAccumMs.current);
+    const recorder = recorderRef.current;
+    const recordingId = recorder?.id;
+    if (!recorder || !recordingId) return;
+    // The recorder's own clock: the one the segments are timed by, and the one
+    // that leaves out a pause still in progress.
+    const atMs = recorder.elapsedMs();
     setMarkerCount((n) => n + 1);
     void window.novarec
       .addMarker({
